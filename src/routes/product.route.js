@@ -9,6 +9,8 @@ router.get("/search-advanced", ProductController.search);
 router.get("/suggest", ProductController.suggest);
 router.get("/related", ProductController.related);
 router.get("/stats", ProductController.stats);
+router.get("/category/:slug", ProductController.getByCategorySlug);
+router.get("/brand/:slug", ProductController.getByBrandSlug);
 router.get("/:slug", ProductController.detail);
 router.get("/id/:id", ProductController.info);
 

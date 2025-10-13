@@ -1,6 +1,64 @@
 const Product = require("../models/product.model");
+const Category = require("../models/category.model");
+const Brand = require("../models/brand.model");
 const asyncHandler = require("../utils/asyncHandler");
 const { ok, created, fail } = require("../utils/apiResponse");
+
+// Helpers để chuẩn hóa dữ liệu response theo yêu cầu
+const mapVariant = (v) => {
+  const price = Number(v?.price || 0);
+  const originPrice = Number(v?.compareAtPrice || 0) || undefined;
+  const discount =
+    originPrice && originPrice > price
+      ? originPrice - price
+      : Number(v?.discount || 0) || 0;
+  return {
+    color_name: v?.color || null,
+    size_name: v?.size || null,
+    price,
+    origin_price: originPrice || undefined,
+    discount,
+    stock: Number(v?.stock || 0),
+    image: v?.image || null,
+  };
+};
+
+const mapProductSummary = (p) => {
+  const variants = Array.isArray(p?.variants) ? p.variants.map(mapVariant) : [];
+  const priceList = variants
+    .map((v) => v.price)
+    .filter((n) => Number.isFinite(n));
+  const originList = variants
+    .map((v) => v.origin_price)
+    .filter((n) => Number.isFinite(Number(n)));
+  const stockTotal = variants.reduce((acc, v) => acc + (v.stock || 0), 0);
+  const minPrice = priceList.length ? Math.min(...priceList) : 0;
+  const minOrigin = originList.length ? Math.min(...originList) : undefined;
+  const discount =
+    Number.isFinite(minOrigin) && minOrigin > minPrice
+      ? minOrigin - minPrice
+      : 0;
+
+  return {
+    product_id: String(p?._id || ""),
+    name: p?.name || "",
+    price: minPrice,
+    origin_price: minOrigin,
+    discount,
+    stock: stockTotal,
+    image: p?.image || p?.variants?.[0]?.image || null,
+    variants,
+  };
+};
+
+const mapCategory = (c) =>
+  c
+    ? {
+        id: String(c._id),
+        name: c.name,
+        slug: c.slug,
+      }
+    : null;
 
 class ProductController {
   /**
@@ -119,11 +177,16 @@ class ProductController {
       Product.countDocuments(filter),
     ]);
 
-    return ok(res, items, {
-      page: Number(page),
-      limit: Number(limit),
-      total,
-      totalPages: Math.ceil(total / Number(limit)),
+    const data = items.map(mapProductSummary);
+    return res.json({
+      status: true,
+      data,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        totalPages: Math.ceil(total / Number(limit)),
+      },
     });
   });
 
@@ -206,11 +269,16 @@ class ProductController {
       Product.countDocuments(filter),
     ]);
 
-    return ok(res, items, {
-      page: Number(page),
-      limit: Number(limit),
-      total,
-      totalPages: Math.ceil(total / Number(limit)),
+    const data = items.map(mapProductSummary);
+    return res.json({
+      status: true,
+      data,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        totalPages: Math.ceil(total / Number(limit)),
+      },
     });
   });
 
@@ -225,7 +293,18 @@ class ProductController {
       return fail(res, 404, "Không tìm thấy sản phẩm");
     }
 
-    return ok(res, product);
+    const categories = await Category.find({
+      _id: { $in: product.categoryIds },
+    })
+      .select("name slug")
+      .lean();
+
+    const data = {
+      category: categories.map(mapCategory).filter(Boolean),
+      product: mapProductSummary(product),
+    };
+
+    return res.json({ status: true, data });
   });
 
   static info = asyncHandler(async (req, res) => {
@@ -237,7 +316,18 @@ class ProductController {
       return fail(res, 404, "Không tìm thấy sản phẩm");
     }
 
-    return ok(res, product);
+    const categories = await Category.find({
+      _id: { $in: product.categoryIds },
+    })
+      .select("name slug")
+      .lean();
+
+    const data = {
+      category: categories.map(mapCategory).filter(Boolean),
+      product: mapProductSummary(product),
+    };
+
+    return res.json({ status: true, data });
   });
 
   /**
@@ -252,7 +342,8 @@ class ProductController {
     }
 
     const product = await Product.create(req.body);
-    return created(res, product);
+    const mapped = mapProductSummary(product);
+    return res.status(201).json({ status: true, ...mapped });
   });
 
   /**
@@ -268,7 +359,8 @@ class ProductController {
       return fail(res, 404, "Không tìm thấy sản phẩm");
     }
 
-    return ok(res, product);
+    const data = mapProductSummary(product);
+    return res.json({ status: true, data });
   });
 
   /**
@@ -282,7 +374,7 @@ class ProductController {
       return fail(res, 404, "Không tìm thấy sản phẩm");
     }
 
-    return ok(res, { deleted: true });
+    return res.json({ status: true, message: "Product deleted successfully" });
   });
 
   /**
@@ -448,8 +540,10 @@ class ProductController {
     const products = result[0]?.products || [];
     const facets = result[0]?.facets[0] || {};
 
-    return ok(res, {
-      products,
+    const data = products.map(mapProductSummary);
+    return res.json({
+      status: true,
+      data,
       facets: {
         brands: facets.brands || [],
         categories: facets.categories || [],
@@ -504,7 +598,7 @@ class ProductController {
       { $limit: Number(limit) },
     ]);
 
-    return ok(res, suggestions);
+    return res.json({ status: true, data: suggestions });
   });
 
   /**
@@ -533,7 +627,8 @@ class ProductController {
       .limit(Number(limit))
       .lean();
 
-    return ok(res, relatedProducts);
+    const data = relatedProducts.map(mapProductSummary);
+    return res.json({ status: true, data });
   });
 
   /**
@@ -554,15 +649,182 @@ class ProductController {
     const totalProducts = await Product.countDocuments();
     const activeProducts = await Product.countDocuments({ status: "active" });
 
-    return ok(res, {
+    const recentProducts = await Product.find({ status: "active" })
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .select("name slug image createdAt")
+      .lean();
+
+    const data = {
       totalProducts,
       activeProducts,
       statusBreakdown: stats,
-      recentProducts: await Product.find({ status: "active" })
-        .sort({ createdAt: -1 })
-        .limit(5)
-        .select("name slug image createdAt")
+      recentProducts: recentProducts.map(mapProductSummary),
+    };
+
+    return res.json({ status: true, data });
+  });
+
+  /**
+   * Lấy danh sách sản phẩm theo category slug
+   */
+  static getByCategorySlug = asyncHandler(async (req, res) => {
+    const { slug } = req.params;
+    const {
+      status = "active",
+      sort = "createdAt",
+      order = "desc",
+      page = 1,
+      limit = 20,
+    } = req.query;
+
+    // Tìm category theo slug
+    const category = await Category.findOne({ slug, status: "active" });
+    if (!category) {
+      return fail(res, 404, "Không tìm thấy danh mục");
+    }
+
+    // Xây dựng filter
+    const filter = {
+      categoryIds: category._id,
+    };
+
+    if (status !== "all") {
+      filter.status = status;
+    }
+
+    // Sort options
+    const sortOptions = {};
+    switch (sort) {
+      case "rating":
+        sortOptions.ratingAvg = order === "asc" ? 1 : -1;
+        sortOptions.createdAt = -1;
+        break;
+      case "sales":
+        sortOptions.salesCount = order === "asc" ? 1 : -1;
+        sortOptions.createdAt = -1;
+        break;
+      case "name":
+        sortOptions.name = order === "asc" ? 1 : -1;
+        sortOptions.createdAt = -1;
+        break;
+      default:
+        sortOptions.createdAt = -1;
+    }
+
+    // Pagination
+    const skip = (Number(page) - 1) * Number(limit);
+
+    // Thực hiện query song song
+    const [items, total] = await Promise.all([
+      Product.find(filter)
+        .populate("brandId", "name logo slug")
+        .populate("categoryIds", "name slug")
+        .sort(sortOptions)
+        .skip(skip)
+        .limit(Number(limit))
         .lean(),
+      Product.countDocuments(filter),
+    ]);
+
+    const data = {
+      category: [mapCategory(category)].filter(Boolean),
+      products: items.map(mapProductSummary),
+    };
+
+    return res.json({
+      status: true,
+      data,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        totalPages: Math.ceil(total / Number(limit)),
+      },
+    });
+  });
+
+  /**
+   * Lấy danh sách sản phẩm theo brand slug
+   */
+  static getByBrandSlug = asyncHandler(async (req, res) => {
+    const { slug } = req.params;
+    const {
+      status = "active",
+      sort = "createdAt",
+      order = "desc",
+      page = 1,
+      limit = 20,
+    } = req.query;
+
+    // Tìm brand theo slug
+    const brand = await Brand.findOne({ slug, status: "active" });
+    if (!brand) {
+      return fail(res, 404, "Không tìm thấy thương hiệu");
+    }
+
+    // Xây dựng filter
+    const filter = {
+      brandId: brand._id,
+    };
+
+    if (status !== "all") {
+      filter.status = status;
+    }
+
+    // Sort options
+    const sortOptions = {};
+    switch (sort) {
+      case "rating":
+        sortOptions.ratingAvg = order === "asc" ? 1 : -1;
+        sortOptions.createdAt = -1;
+        break;
+      case "sales":
+        sortOptions.salesCount = order === "asc" ? 1 : -1;
+        sortOptions.createdAt = -1;
+        break;
+      case "name":
+        sortOptions.name = order === "asc" ? 1 : -1;
+        sortOptions.createdAt = -1;
+        break;
+      default:
+        sortOptions.createdAt = -1;
+    }
+
+    // Pagination
+    const skip = (Number(page) - 1) * Number(limit);
+
+    // Thực hiện query song song
+    const [items, total] = await Promise.all([
+      Product.find(filter)
+        .populate("brandId", "name logo slug")
+        .populate("categoryIds", "name slug")
+        .sort(sortOptions)
+        .skip(skip)
+        .limit(Number(limit))
+        .lean(),
+      Product.countDocuments(filter),
+    ]);
+
+    const data = {
+      brand: {
+        id: String(brand._id),
+        name: brand.name,
+        slug: brand.slug,
+        logo: brand.logo,
+      },
+      products: items.map(mapProductSummary),
+    };
+
+    return res.json({
+      status: true,
+      data,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        totalPages: Math.ceil(total / Number(limit)),
+      },
     });
   });
 }

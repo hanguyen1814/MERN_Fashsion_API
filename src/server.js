@@ -15,7 +15,7 @@ app.use(morgan("dev"));
 
 app.get("/health", (_, res) => res.json({ ok: true }));
 
-app.use("/api/v1", require("./routes"));
+app.use("/api", require("./routes"));
 
 app.use(require("./middlewares/error"));
 
