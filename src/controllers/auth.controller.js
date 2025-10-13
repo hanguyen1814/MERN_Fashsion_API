@@ -57,18 +57,27 @@ class AuthController {
       return fail(res, 401, "Sai email hoặc mật khẩu");
     }
 
-    // Cập nhật lastLogin và tạo token
-    user.lastLogin = new Date();
-    await user.save();
-
-    const token = jwt.sign(
+    // Tạo access token và refresh token
+    const accessToken = jwt.sign(
       { id: user._id, role: user.role },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES || "7d" }
+      { expiresIn: process.env.JWT_EXPIRES || "15m" }
     );
 
+    const refreshToken = jwt.sign(
+      { id: user._id },
+      process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_REFRESH_EXPIRES || "7d" }
+    );
+
+    // Cập nhật lastLogin và lưu refresh token
+    user.lastLogin = new Date();
+    user.refreshToken = refreshToken;
+    await user.save();
+
     return ok(res, {
-      token,
+      accessToken,
+      refreshToken,
       user: {
         id: user._id,
         fullName: user.fullName,
@@ -76,6 +85,72 @@ class AuthController {
         role: user.role,
       },
     });
+  });
+
+  /**
+   * Refresh access token
+   */
+  static refreshToken = asyncHandler(async (req, res) => {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return fail(res, 400, "Refresh token không được cung cấp");
+    }
+
+    try {
+      // Verify refresh token
+      const decoded = jwt.verify(
+        refreshToken,
+        process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET
+      );
+
+      // Tìm user với refresh token
+      const user = await User.findOne({
+        _id: decoded.id,
+        refreshToken,
+        status: "active",
+      });
+
+      if (!user) {
+        return fail(res, 401, "Refresh token không hợp lệ");
+      }
+
+      // Tạo access token mới
+      const accessToken = jwt.sign(
+        { id: user._id, role: user.role },
+        process.env.JWT_SECRET,
+        { expiresIn: process.env.JWT_EXPIRES || "15m" }
+      );
+
+      return ok(res, {
+        accessToken,
+        user: {
+          id: user._id,
+          fullName: user.fullName,
+          email: user.email,
+          role: user.role,
+        },
+      });
+    } catch (error) {
+      return fail(res, 401, "Refresh token không hợp lệ hoặc đã hết hạn");
+    }
+  });
+
+  /**
+   * Đăng xuất
+   */
+  static logout = asyncHandler(async (req, res) => {
+    const { refreshToken } = req.body;
+
+    if (refreshToken) {
+      // Xóa refresh token khỏi database
+      await User.findOneAndUpdate(
+        { refreshToken },
+        { $unset: { refreshToken: 1 } }
+      );
+    }
+
+    return ok(res, { message: "Đăng xuất thành công" });
   });
 }
 
