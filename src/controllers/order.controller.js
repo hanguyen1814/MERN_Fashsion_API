@@ -132,6 +132,132 @@ class OrderController {
       session.endSession();
     }
   });
+
+  /**
+   * Tạo đơn hàng trực tiếp từ danh sách sản phẩm (không qua giỏ hàng)
+   */
+  static checkoutDirect = asyncHandler(async (req, res) => {
+    const {
+      items = [], // [{ productId, sku, quantity }]
+      fullName,
+      phone,
+      street,
+      ward,
+      district,
+      province,
+      method = "cod",
+      provider,
+    } = req.body;
+    const userId = req.user.id;
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return fail(res, 400, "Danh sách sản phẩm trống");
+    }
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      let subtotal = 0;
+      const orderItems = [];
+
+      // Kiểm tra và trừ kho từng item
+      for (const reqItem of items) {
+        const { productId, sku, quantity = 1 } = reqItem;
+        if (!productId || !sku || quantity <= 0) {
+          throw new Error(
+            "Thiếu thông tin sản phẩm hoặc số lượng không hợp lệ"
+          );
+        }
+
+        const product = await Product.findById(productId).session(session);
+        if (!product) {
+          throw new Error("Sản phẩm không tồn tại");
+        }
+
+        const variant = product.variants.find((v) => v.sku === sku);
+        if (!variant) {
+          throw new Error(`SKU ${sku} không tồn tại`);
+        }
+        if (variant.stock < quantity) {
+          throw new Error(`SKU ${sku} hết hàng/không đủ tồn`);
+        }
+
+        // Trừ kho
+        variant.stock -= quantity;
+        await product.save({ session });
+
+        // Ghi log tồn kho tạm thời (refId sẽ cập nhật sau khi có order)
+        await InventoryLog.create(
+          [
+            {
+              productId: product._id,
+              sku,
+              quantity: -quantity,
+              reason: "order",
+              refId: "pending",
+            },
+          ],
+          { session }
+        );
+
+        const price = variant.price;
+        subtotal += price * quantity;
+        orderItems.push({
+          productId: product._id,
+          sku,
+          name: product.name,
+          price,
+          quantity,
+          image: variant.image || product.image,
+        });
+      }
+
+      // Tạm thời không áp dụng coupon, phí ship tính 0 (có thể mở rộng sau)
+      const discount = 0;
+      const shippingFee = 0;
+      const total = subtotal - discount + shippingFee;
+
+      const orderData = {
+        code: genOrderCode(),
+        userId,
+        items: orderItems,
+        shippingAddress: {
+          fullName,
+          phone,
+          street,
+          ward,
+          district,
+          province,
+        },
+        shippingMethod: "standard",
+        couponCode: undefined,
+        subtotal,
+        discount,
+        shippingFee,
+        total,
+        status: "pending",
+        timeline: [{ status: "pending", note: "Đơn mới tạo" }],
+        payment: {
+          method,
+          provider,
+          status: method === "cod" ? "paid" : "pending",
+        },
+      };
+
+      const [order] = await Order.create([orderData], { session });
+
+      // Cập nhật refId cho inventory log nếu cần (bỏ qua để tránh quét cả collection)
+
+      await session.commitTransaction();
+      return created(res, order);
+    } catch (error) {
+      await session.abortTransaction();
+      return fail(res, 400, error.message);
+    } finally {
+      session.endSession();
+    }
+  });
 }
 
 module.exports = OrderController;
