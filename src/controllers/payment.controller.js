@@ -3,6 +3,7 @@ const WebhookLog = require("../models/webhookLog.model");
 const PaymentService = require("../services/payment.service");
 const asyncHandler = require("../utils/asyncHandler");
 const { ok, error } = require("../utils/apiResponse");
+const logger = require("../config/logger");
 
 class PaymentController {
   /**
@@ -12,9 +13,20 @@ class PaymentController {
     try {
       const { orderId, userInfo, items } = req.body;
 
+      logger.info(`Creating MoMo payment for order: ${orderId}`, {
+        orderId,
+        userId: req.user?.id,
+        ip: req.ip,
+      });
+
       // Tìm đơn hàng
       const order = await Order.findOne({ code: orderId });
       if (!order) {
+        logger.warn(`Payment creation failed - Order not found: ${orderId}`, {
+          orderId,
+          userId: req.user?.id,
+          ip: req.ip,
+        });
         return error(res, "Đơn hàng không tồn tại", 404);
       }
 

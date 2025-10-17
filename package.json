@@ -2,8 +2,14 @@
   "name": "mern-fashion",
   "version": "1.0.0",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon src/server.js"
+    "test": "node test/run-tests.js",
+    "test:security": "node test/security-test.js",
+    "dev": "nodemon src/server.js",
+    "logs:analyze": "node scripts/analyze-logs.js summary",
+    "logs:errors": "node scripts/analyze-logs.js errors",
+    "logs:categories": "node scripts/analyze-logs.js categories",
+    "logs:trace": "node scripts/analyze-logs.js trace",
+    "logs:demo": "node src/examples/improvedLoggingDemo.js"
   },
   "author": "",
   "license": "ISC",
@@ -11,15 +17,23 @@
   "dependencies": {
     "axios": "^1.12.2",
     "bcrypt": "^6.0.0",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
+    "express-rate-limit": "^8.1.0",
+    "express-validator": "^7.2.1",
+    "helmet": "^8.1.0",
+    "hpp": "^0.2.3",
     "http-status": "^2.1.0",
     "joi": "^18.0.1",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.18.1",
     "morgan": "^1.10.1",
-    "slugify": "^1.6.6"
+    "slugify": "^1.6.6",
+    "winston": "^3.18.3",
+    "winston-daily-rotate-file": "^5.0.0",
+    "xss-clean": "^0.1.4"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"

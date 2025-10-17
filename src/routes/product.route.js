@@ -1,9 +1,14 @@
 const router = require("express").Router();
 const ProductController = require("../controllers/product.controller");
 const auth = require("../middlewares/auth");
+const {
+  productValidation,
+  paginationValidation,
+} = require("../middlewares/validation");
+const { rbac, requireStaffOrAdmin } = require("../middlewares/rbac");
 
 // Public routes
-router.get("/", ProductController.list);
+router.get("/", paginationValidation.query, ProductController.list);
 router.get("/search", ProductController.simpleSearch);
 router.get("/search-advanced", ProductController.search);
 router.get("/suggest", ProductController.suggest);
@@ -12,11 +17,30 @@ router.get("/stats", ProductController.stats);
 router.get("/category/:slug", ProductController.getByCategorySlug);
 router.get("/brand/:slug", ProductController.getByBrandSlug);
 router.get("/:slug", ProductController.detail);
-router.get("/id/:id", ProductController.info);
+router.get("/id/:id", productValidation.productId, ProductController.info);
 
-// Admin routes
-router.post("/", auth(["admin"]), ProductController.create);
-router.put("/:id", auth(["admin"]), ProductController.update);
-router.delete("/:id", auth(["admin"]), ProductController.remove);
+// Admin/Staff routes
+router.post(
+  "/",
+  auth(),
+  rbac("product:write:all"),
+  productValidation.create,
+  ProductController.create
+);
+router.put(
+  "/:id",
+  auth(),
+  rbac("product:write:all"),
+  productValidation.productId,
+  productValidation.update,
+  ProductController.update
+);
+router.delete(
+  "/:id",
+  auth(),
+  rbac("product:delete:all"),
+  productValidation.productId,
+  ProductController.remove
+);
 
 module.exports = router;

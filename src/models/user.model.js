@@ -22,8 +22,14 @@ const UserSchema = new mongoose.Schema(
       default: "customer",
     },
     fullName: { type: String, required: true, trim: true },
-    email: { type: String, required: true, unique: true, lowercase: true },
-    phone: { type: String, unique: true, sparse: true },
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true,
+      index: true,
+    },
+    phone: { type: String, unique: true, sparse: true, index: true },
     passwordHash: { type: String, required: true },
     addresses: [AddressSchema],
     avatarUrl: String,
@@ -47,6 +53,12 @@ const UserSchema = new mongoose.Schema(
 
 // Thêm method để so sánh password
 UserSchema.methods.comparePassword = async function (candidatePassword) {
+  if (!this.passwordHash || typeof this.passwordHash !== "string") {
+    return false;
+  }
+  if (typeof candidatePassword !== "string") {
+    return false;
+  }
   return await bcrypt.compare(candidatePassword, this.passwordHash);
 };
 
@@ -58,9 +70,7 @@ UserSchema.methods.toPublicJSON = function () {
   return userObject;
 };
 
-// Thêm index cho tìm kiếm
-UserSchema.index({ email: 1 });
-UserSchema.index({ phone: 1 });
+// Thêm index cho tìm kiếm (loại bỏ duplicate indexes)
 UserSchema.index({ role: 1 });
 UserSchema.index({ status: 1 });
 UserSchema.index({ createdAt: -1 });

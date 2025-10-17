@@ -4,6 +4,35 @@ const { ok, created, fail } = require("../utils/apiResponse");
 const User = require("../models/user.model");
 
 class UserController {
+  // Chuẩn hoá dữ liệu người dùng về định dạng response yêu cầu
+  static formatUser(userDoc) {
+    if (!userDoc) return null;
+    const user = userDoc.toObject ? userDoc.toObject() : userDoc;
+    const defaultAddress = Array.isArray(user.addresses)
+      ? user.addresses.find((a) => a && a.isDefault) || user.addresses[0]
+      : null;
+    const addressString = defaultAddress
+      ? [
+          defaultAddress.street,
+          defaultAddress.ward,
+          defaultAddress.district,
+          defaultAddress.province,
+        ]
+          .filter(Boolean)
+          .join(", ")
+      : null;
+
+    return {
+      user_id: user._id,
+      full_name: user.fullName || null,
+      email: user.email || null,
+      phone: user.phone || null,
+      address: addressString,
+      role: user.role || null,
+      status: user.status || null,
+      created_at: user.createdAt || null,
+    };
+  }
   /**
    * Lấy danh sách tất cả người dùng (chỉ admin)
    */
@@ -30,17 +59,15 @@ class UserController {
       .skip(skip)
       .limit(parseInt(limit));
 
+    const data = users.map((u) => UserController.formatUser(u));
     const total = await User.countDocuments(filter);
-
-    return ok(res, {
-      users,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / limit),
-      },
-    });
+    const meta = {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      total,
+      pages: Math.ceil(total / parseInt(limit)),
+    };
+    return ok(res, data, meta);
   });
 
   /**
@@ -60,7 +87,7 @@ class UserController {
       return fail(res, 403, "Không có quyền truy cập");
     }
 
-    return ok(res, { user });
+    return ok(res, UserController.formatUser(user));
   });
 
   /**
@@ -75,7 +102,7 @@ class UserController {
       return fail(res, 404, "Không tìm thấy người dùng");
     }
 
-    return ok(res, { user });
+    return ok(res, UserController.formatUser(user));
   });
 
   /**
@@ -99,15 +126,23 @@ class UserController {
       return fail(res, 404, "Không tìm thấy người dùng");
     }
 
-    return ok(res, { user, message: "Cập nhật thông tin thành công" });
+    return ok(res, { message: "User updated successfully" });
   });
 
   /**
    * Đổi mật khẩu
    */
   static changePassword = asyncHandler(async (req, res) => {
-    const { currentPassword, newPassword } = req.body;
-    const userId = req.user.id;
+    const currentPassword = req.body.currentPassword || req.body.oldPass;
+    const newPassword = req.body.newPassword || req.body.newPass;
+    // Cho phép truyền id qua params; nếu không có thì dùng id từ token
+    const paramsId = req.params && req.params.id ? req.params.id : null;
+    const userId = paramsId || req.user.id;
+
+    // Nếu có paramsId nhưng không phải admin và không trùng user hiện tại -> cấm
+    if (paramsId && req.user.role !== "admin" && req.user.id !== paramsId) {
+      return fail(res, 403, "Không có quyền cập nhật mật khẩu người dùng này");
+    }
 
     if (!currentPassword || !newPassword) {
       return fail(res, 400, "Thiếu mật khẩu hiện tại hoặc mật khẩu mới");
@@ -132,7 +167,7 @@ class UserController {
     user.passwordHash = newPasswordHash;
     await user.save();
 
-    return ok(res, { message: "Đổi mật khẩu thành công" });
+    return ok(res, { message: "Password updated successfully" });
   });
 
   /**
@@ -159,10 +194,7 @@ class UserController {
       return fail(res, 404, "Không tìm thấy người dùng");
     }
 
-    return ok(res, {
-      user,
-      message: "Cập nhật thông tin người dùng thành công",
-    });
+    return ok(res, { message: "User updated successfully" });
   });
 
   /**
@@ -181,7 +213,7 @@ class UserController {
       return fail(res, 404, "Không tìm thấy người dùng");
     }
 
-    return ok(res, { message: "Xóa người dùng thành công" });
+    return ok(res, { message: "User deleted successfully" });
   });
 
   /**

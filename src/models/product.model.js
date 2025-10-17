@@ -19,7 +19,13 @@ const VariantSchema = new mongoose.Schema(
 const ProductSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
-    slug: { type: String, required: true, unique: true, lowercase: true },
+    slug: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true,
+      index: true,
+    },
     description: String,
     brandId: { type: mongoose.Schema.Types.ObjectId, ref: "Brand" },
     categoryIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "Category" }],
@@ -55,8 +61,7 @@ ProductSchema.index({ "variants.size": 1, status: 1 });
 ProductSchema.index({ ratingAvg: -1, status: 1 });
 ProductSchema.index({ salesCount: -1, status: 1 });
 
-// Single field indexes
-ProductSchema.index({ slug: 1 });
+// Single field indexes (loại bỏ duplicate indexes)
 ProductSchema.index({ brandId: 1 });
 ProductSchema.index({ categoryIds: 1 });
 ProductSchema.index({ tags: 1 });
