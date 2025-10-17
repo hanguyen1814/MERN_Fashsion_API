@@ -258,6 +258,34 @@ class OrderController {
       session.endSession();
     }
   });
+
+  /**
+   * Cập nhật trạng thái đơn hàng (staff/admin)
+   * body: { status, note }
+   */
+  static updateStatus = asyncHandler(async (req, res) => {
+    const { id } = req.params; // order id hoặc code?
+    const { status, note } = req.body;
+
+    if (!status) return fail(res, 400, "Thiếu trạng thái mới");
+
+    // Cho phép cập nhật bằng code hoặc _id
+    const query = mongoose.Types.ObjectId.isValid(id)
+      ? { _id: id }
+      : { code: id };
+
+    const order = await Order.findOne(query);
+    if (!order) return fail(res, 404, "Không tìm thấy đơn hàng");
+
+    order.status = status;
+    order.timeline.push({
+      status,
+      note: note || `Cập nhật trạng thái: ${status}`,
+    });
+    await order.save();
+
+    return ok(res, order);
+  });
 }
 
 module.exports = OrderController;

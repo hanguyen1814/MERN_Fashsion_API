@@ -16,7 +16,10 @@ const MOMO_CONFIG = {
     process.env.MOMO_IPN_URL ||
     `${process.env.BASE_URL}/api/payment/momo/webhook`,
   redirectUrl:
-    process.env.MOMO_REDIRECT_URL || `${process.env.BASE_URL}/payment/success`,
+    process.env.MOMO_REDIRECT_URL ||
+    (process.env.FRONTEND_URL
+      ? `${process.env.FRONTEND_URL}/payment/success`
+      : `${process.env.BASE_URL}/payment/success`),
   storeId: process.env.MOMO_STORE_ID || "MOMO_STORE",
   storeName: process.env.MOMO_STORE_NAME || "Fashion Store",
 };
@@ -124,6 +127,7 @@ class PaymentService {
           paymentUrl: response.data.payUrl,
           deeplink: response.data.deeplink,
           qrCodeUrl: response.data.qrCodeUrl,
+          requestId: requestBody.requestId,
         };
       } else {
         throw new Error(
@@ -171,11 +175,11 @@ class PaymentService {
       signature,
       amount,
       extraData = "",
-      message,
+      partnerCode,
       orderId,
+      message,
       orderInfo,
       orderType,
-      partnerCode,
       payType,
       requestId,
       responseTime,

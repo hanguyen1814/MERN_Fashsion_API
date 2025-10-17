@@ -50,10 +50,14 @@ class PaymentController {
       }
 
       // Tạo thanh toán MoMo
+      // Ưu tiên items từ payload nếu client gửi kèm (giải phần payload khi thanh toán)
+      const requestItems =
+        Array.isArray(items) && items.length > 0 ? items : order.items || [];
+
       const result = await PaymentService.createMomoPayment(
         paymentData,
         userData,
-        order.items || []
+        requestItems
       );
 
       if (result.success) {
@@ -61,8 +65,10 @@ class PaymentController {
         order.payment.provider = "momo";
         order.payment.status = "pending";
         order.payment.raw = {
-          requestId: paymentData.requestId,
+          ...(order.payment.raw || {}),
+          requestId: result.requestId || paymentData.requestId,
           momoOrderId: result.data.orderId,
+          payUrl: result.paymentUrl,
         };
         await order.save();
 
@@ -89,8 +95,8 @@ class PaymentController {
     try {
       // Ghi log webhook
       await WebhookLog.create({
-        source: "momo",
-        event: "ipn",
+        source: "payment",
+        event: "momo_ipn",
         payload: req.body,
       });
 
@@ -99,10 +105,32 @@ class PaymentController {
       // Xử lý IPN từ MoMo
       const result = await PaymentService.handleMomoIPN(req.body);
 
+      // Chặn xử lý lặp: nếu đã paid/failed tương ứng thì bỏ qua
+      const existingOrder = await Order.findOne({ code: result.orderId });
+      if (existingOrder) {
+        if (result.success && existingOrder.payment?.status === "paid") {
+          return res.status(200).json({ message: "OK" });
+        }
+        if (!result.success && existingOrder.payment?.status === "failed") {
+          return res.status(200).json({ message: "OK" });
+        }
+      }
+
       if (result.success) {
         // Cập nhật đơn hàng thành công
         const order = await Order.findOne({ code: result.orderId });
         if (order) {
+          // So khớp amount để đảm bảo số tiền đúng
+          if (Number(order.total) !== Number(result.amount)) {
+            order.payment.status = "review"; // trạng thái cần kiểm tra
+            order.timeline.push({
+              status: "pending",
+              note: `Số tiền IPN (${result.amount}) không khớp tổng đơn (${order.total})`,
+            });
+            await order.save();
+            return res.status(200).json({ message: "AMOUNT_MISMATCH" });
+          }
+
           order.payment.status = "paid";
           order.payment.transactionId = result.transactionId;
           order.status = "paid";

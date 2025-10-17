@@ -13,6 +13,7 @@ const mapVariant = (v) => {
       ? originPrice - price
       : Number(v?.discount || 0) || 0;
   return {
+    sku: v?.sku || null,
     color_name: v?.color || null,
     size_name: v?.size || null,
     price,
