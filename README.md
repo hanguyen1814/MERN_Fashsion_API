@@ -511,6 +511,7 @@ GET /products?page=1&limit=20&brand=64f1a2b3c4d5e6f7a8b9c0d1&category=64f1a2b3c4
       "image": "https://example.com/product.jpg",
       "variants": [
         {
+          "sku": "ATN-RED-M",
           "color_name": "đỏ",
           "size_name": "M",
           "price": 250000,
@@ -520,6 +521,7 @@ GET /products?page=1&limit=20&brand=64f1a2b3c4d5e6f7a8b9c0d1&category=64f1a2b3c4
           "image": "https://example.com/variant1.jpg"
         },
         {
+          "sku": "ATN-BLUE-L",
           "color_name": "xanh",
           "size_name": "L",
           "price": 250000,
@@ -802,13 +804,13 @@ GET /categories
 }
 ```
 
-### 4.2 Tạo category mới (Admin)
+### 4.2 Tạo category mới (Admin/Staff)
 
 ```http
 POST /categories
 ```
 
-**Headers:** `Authorization: Bearer <admin_token>`
+**Headers:** `Authorization: Bearer <admin_or_staff_token>`
 
 **Body:**
 
@@ -823,13 +825,13 @@ POST /categories
 }
 ```
 
-### 4.3 Cập nhật category (Admin)
+### 4.3 Cập nhật category (Admin/Staff)
 
 ```http
 PUT /categories/:id
 ```
 
-**Headers:** `Authorization: Bearer <admin_token>`
+**Headers:** `Authorization: Bearer <admin_or_staff_token>`
 
 ### 4.4 Xóa category (Admin)
 
@@ -868,11 +870,13 @@ GET /brands
 }
 ```
 
-### 5.2 Tạo brand mới
+### 5.2 Tạo brand mới (Admin/Staff)
 
 ```http
 POST /brands
 ```
+
+**Headers:** `Authorization: Bearer <admin_or_staff_token>`
 
 **Body:**
 
@@ -886,13 +890,13 @@ POST /brands
 }
 ```
 
-### 5.3 Cập nhật brand (Admin)
+### 5.3 Cập nhật brand (Admin/Staff)
 
 ```http
 PUT /brands/:id
 ```
 
-**Headers:** `Authorization: Bearer <admin_token>`
+**Headers:** `Authorization: Bearer <admin_or_staff_token>`
 
 ### 5.4 Xóa brand (Admin)
 
@@ -906,7 +910,7 @@ DELETE /brands/:id
 
 ## 6. Cart (`/cart`)
 
-### 6.1 Lấy giỏ hàng
+### 6.1 Lấy giỏ hàng (đã gộp variants theo sản phẩm)
 
 ```http
 GET /cart
@@ -920,23 +924,45 @@ GET /cart
 {
   "status": true,
   "data": {
-    "_id": "64f1a2b3c4d5e6f7a8b9c0d1",
-    "userId": "64f1a2b3c4d5e6f7a8b9c0d2",
     "items": [
       {
-        "productId": "64f1a2b3c4d5e6f7a8b9c0d3",
-        "sku": "ATN-RED-M",
+        "product_id": "64f1a2b3c4d5e6f7a8b9c0d3",
         "name": "Áo thun nam",
         "price": 250000,
-        "quantity": 2,
-        "image": "https://example.com/product.jpg"
+        "origin_price": 300000,
+        "discount": 50000,
+        "stock": 100,
+        "image": "https://example.com/product.jpg",
+        "variants": [
+          {
+            "sku": "ATN-RED-M",
+            "color_name": "đỏ",
+            "size_name": "M",
+            "price": 250000,
+            "origin_price": 300000,
+            "discount": 50000,
+            "stock": 50,
+            "image": "https://example.com/variant1.jpg",
+            "quantity": 2
+          },
+          {
+            "sku": "ATN-RED-L",
+            "color_name": "đỏ",
+            "size_name": "L",
+            "price": 250000,
+            "origin_price": 300000,
+            "discount": 50000,
+            "stock": 50,
+            "image": "https://example.com/variant2.jpg",
+            "quantity": 1
+          }
+        ]
       }
     ],
-    "subtotal": 500000,
+    "subtotal": 750000,
     "discount": 0,
     "shippingFee": 30000,
-    "total": 530000,
-    "createdAt": "2023-09-01T00:00:00.000Z"
+    "total": 780000
   }
 }
 ```
@@ -976,7 +1002,7 @@ POST /cart/items
 }
 ```
 
-### 6.3 Cập nhật số lượng sản phẩm
+### 6.3 Cập nhật item trong giỏ hàng (theo sku hoặc đổi variant)
 
 ```http
 PUT /cart/items
@@ -984,12 +1010,23 @@ PUT /cart/items
 
 **Headers:** `Authorization: Bearer <token>`
 
-**Body:**
+**Body (cập nhật số lượng theo sku hiện tại):**
 
 ```json
 {
   "sku": "ATN-RED-M",
   "quantity": 3
+}
+```
+
+**Body (đổi sang variant khác của cùng sản phẩm):**
+
+```json
+{
+  "productId": "64f1a2b3c4d5e6f7a8b9c0d1",
+  "sku": "ATN-RED-M",
+  "newSku": "ATN-BLUE-L",
+  "quantity": 2
 }
 ```
 
@@ -1174,6 +1211,27 @@ POST /orders/checkout-direct
 }
 ```
 
+### 7.4 Cập nhật trạng thái đơn hàng (Staff/Admin)
+
+```http
+PATCH /orders/:id/status
+```
+
+`id` có thể là `_id` của MongoDB hoặc `code` của đơn.
+
+**Headers:** `Authorization: Bearer <staff_or_admin_token>`
+
+**Body:**
+
+```json
+{
+  "status": "processing",
+  "note": "Đã xác nhận thanh toán"
+}
+```
+
+**Response Success (200):** trả về object đơn hàng đã cập nhật.
+
 ---
 
 ## 8. Payments (`/payments`)
@@ -1215,7 +1273,8 @@ POST /payments/momo/create
     "paymentUrl": "https://payment.momo.vn/...",
     "deeplink": "momo://app/payment/...",
     "qrCodeUrl": "https://payment.momo.vn/qr/...",
-    "orderId": "ORD-20230901-001"
+    "orderId": "ORD-20230901-001",
+    "requestId": "123456789"
   }
 }
 ```
@@ -1226,7 +1285,12 @@ POST /payments/momo/create
 POST /payments/momo/webhook
 ```
 
-**Note:** Endpoint này được MoMo gọi để thông báo kết quả thanh toán.
+**Nhiệm vụ:**
+
+- Xác thực chữ ký MoMo (HMAC SHA256)
+- Chống xử lý lặp (idempotent)
+- Đối soát số tiền IPN với `order.total` (lệch → `payment.status = review`)
+- Cập nhật trạng thái đơn: thành công `paid`, thất bại `failed`, ghi timeline và `transactionId`
 
 ### 8.3 Redirect MoMo
 
