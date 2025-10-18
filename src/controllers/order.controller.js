@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const Cart = require("../models/cart.model");
 const Order = require("../models/order.model");
 const Product = require("../models/product.model");
+const User = require("../models/user.model");
 const InventoryLog = require("../models/inventoryLog.model");
 const { genOrderCode } = require("../utils/orderCode");
 const asyncHandler = require("../utils/asyncHandler");
@@ -285,6 +286,299 @@ class OrderController {
     await order.save();
 
     return ok(res, order);
+  });
+
+  /**
+   * Lấy danh sách đơn hàng cho admin
+   */
+  static listAdmin = asyncHandler(async (req, res) => {
+    const {
+      page = 1,
+      limit = 20,
+      status,
+      userId,
+      startDate,
+      endDate,
+      sort = "createdAt",
+      order = "desc",
+      search,
+    } = req.query;
+
+    // Xây dựng query
+    const query = {};
+
+    if (status) query.status = status;
+    if (userId) query.userId = userId;
+
+    if (startDate || endDate) {
+      query.createdAt = {};
+      if (startDate) query.createdAt.$gte = new Date(startDate);
+      if (endDate) query.createdAt.$lte = new Date(endDate);
+    }
+
+    if (search) {
+      query.$or = [
+        { code: { $regex: search, $options: "i" } },
+        { "shippingAddress.fullName": { $regex: search, $options: "i" } },
+      ];
+    }
+
+    // Xây dựng sort
+    const sortObj = {};
+    sortObj[sort] = order === "asc" ? 1 : -1;
+
+    // Thực hiện query với pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const orders = await Order.find(query)
+      .populate("userId", "fullName email phone")
+      .sort(sortObj)
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await Order.countDocuments(query);
+
+    // Format response
+    const formattedOrders = orders.map((order) => ({
+      _id: order._id,
+      code: order.code,
+      userId: order.userId?._id || null,
+      customer: order.userId
+        ? {
+            fullName: order.userId.fullName,
+            email: order.userId.email,
+            phone: order.userId.phone,
+          }
+        : null,
+      items: order.items,
+      shippingAddress: order.shippingAddress,
+      subtotal: order.subtotal,
+      discount: order.discount,
+      shippingFee: order.shippingFee,
+      total: order.total,
+      status: order.status,
+      timeline: order.timeline,
+      payment: order.payment,
+      createdAt: order.createdAt,
+    }));
+
+    return ok(res, {
+      orders: formattedOrders,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / parseInt(limit)),
+      },
+    });
+  });
+
+  /**
+   * Lấy chi tiết đơn hàng cho admin
+   */
+  static getAdmin = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    // Cho phép tìm bằng _id hoặc code
+    const query = mongoose.Types.ObjectId.isValid(id)
+      ? { _id: id }
+      : { code: id };
+
+    const order = await Order.findOne(query).populate(
+      "userId",
+      "fullName email phone"
+    );
+
+    if (!order) {
+      return fail(res, 404, "Không tìm thấy đơn hàng");
+    }
+
+    return ok(res, order);
+  });
+
+  /**
+   * Thống kê đơn hàng cho admin
+   */
+  static statsAdmin = asyncHandler(async (req, res) => {
+    const { period = "7d", status } = req.query;
+
+    // Tính ngày bắt đầu dựa trên period
+    const now = new Date();
+    let startDate;
+    switch (period) {
+      case "1d":
+        startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        break;
+      case "7d":
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case "30d":
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        break;
+      case "90d":
+        startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+        break;
+      default:
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    }
+
+    // Query cơ bản
+    const baseQuery = {
+      createdAt: { $gte: startDate, $lte: now },
+    };
+
+    if (status && status !== "all") {
+      baseQuery.status = status;
+    }
+
+    // Thống kê tổng quan
+    const overview = await Order.aggregate([
+      { $match: baseQuery },
+      {
+        $group: {
+          _id: null,
+          totalOrders: { $sum: 1 },
+          totalRevenue: { $sum: "$total" },
+          averageOrderValue: { $avg: "$total" },
+        },
+      },
+    ]);
+
+    // Thống kê theo trạng thái
+    const statusBreakdown = await Order.aggregate([
+      { $match: baseQuery },
+      {
+        $group: {
+          _id: "$status",
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    // Thống kê theo ngày
+    const dailyStats = await Order.aggregate([
+      { $match: baseQuery },
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: "%Y-%m-%d",
+              date: "$createdAt",
+            },
+          },
+          orders: { $sum: 1 },
+          revenue: { $sum: "$total" },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+
+    // Top customers
+    const topCustomers = await Order.aggregate([
+      { $match: baseQuery },
+      {
+        $group: {
+          _id: "$userId",
+          totalOrders: { $sum: 1 },
+          totalSpent: { $sum: "$total" },
+        },
+      },
+      { $sort: { totalSpent: -1 } },
+      { $limit: 10 },
+      {
+        $lookup: {
+          from: "users",
+          localField: "_id",
+          foreignField: "_id",
+          as: "user",
+        },
+      },
+      {
+        $unwind: "$user",
+      },
+      {
+        $project: {
+          userId: "$_id",
+          fullName: "$user.fullName",
+          totalOrders: 1,
+          totalSpent: 1,
+        },
+      },
+    ]);
+
+    // Format status breakdown
+    const statusBreakdownObj = {};
+    statusBreakdown.forEach((item) => {
+      statusBreakdownObj[item._id] = item.count;
+    });
+
+    const result = {
+      period,
+      startDate,
+      endDate: now,
+      overview: overview[0] || {
+        totalOrders: 0,
+        totalRevenue: 0,
+        averageOrderValue: 0,
+      },
+      statusBreakdown: statusBreakdownObj,
+      dailyStats,
+      topCustomers,
+    };
+
+    return ok(res, result);
+  });
+
+  /**
+   * Xuất danh sách đơn hàng (CSV/Excel)
+   */
+  static exportAdmin = asyncHandler(async (req, res) => {
+    const { format = "csv", status, startDate, endDate } = req.query;
+
+    // Xây dựng query
+    const query = {};
+
+    if (status && status !== "all") query.status = status;
+
+    if (startDate || endDate) {
+      query.createdAt = {};
+      if (startDate) query.createdAt.$gte = new Date(startDate);
+      if (endDate) query.createdAt.$lte = new Date(endDate);
+    }
+
+    const orders = await Order.find(query)
+      .populate("userId", "fullName email phone")
+      .sort({ createdAt: -1 });
+
+    if (format === "csv") {
+      // Tạo CSV
+      const csvHeader =
+        "Order Code,Customer Name,Email,Phone,Status,Total,Items,Payment Method,Created At\n";
+      const csvRows = orders
+        .map((order) => {
+          const items = order.items
+            .map((item) => `${item.name} (${item.sku}) x${item.quantity}`)
+            .join("; ");
+          return [
+            order.code,
+            order.userId.fullName,
+            order.userId.email,
+            order.userId.phone,
+            order.status,
+            order.total,
+            `"${items}"`,
+            order.payment.method,
+            order.createdAt.toISOString(),
+          ].join(",");
+        })
+        .join("\n");
+
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", "attachment; filename=orders.csv");
+      return res.send(csvHeader + csvRows);
+    } else {
+      // Tạo Excel (cần thêm thư viện xlsx)
+      return fail(res, 400, "Excel export chưa được hỗ trợ");
+    }
   });
 }
 

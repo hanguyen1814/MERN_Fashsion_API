@@ -8,7 +8,7 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-router.use("/auth", authLimiter, require("./auth.route"));
+router.use("/auth", require("./auth.route"));
 router.use("/users", require("./user.route"));
 router.use("/brands", require("./brand.route"));
 router.use("/categories", require("./category.route"));

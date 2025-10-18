@@ -1232,6 +1232,141 @@ PATCH /orders/:id/status
 
 **Response Success (200):** trả về object đơn hàng đã cập nhật.
 
+### 7.5 Lấy danh sách đơn hàng (Admin)
+
+```http
+GET /orders/admin?page=1&limit=20&status=pending&userId=64f1a2b3c4d5e6f7a8b9c0d1&startDate=2023-09-01&endDate=2023-09-30&sort=createdAt&order=desc
+```
+
+**Headers:** `Authorization: Bearer <admin_token>`
+
+**Query Parameters:**
+- `page`: Số trang (default: 1)
+- `limit`: Số item/trang (default: 20)
+- `status`: pending/paid/processing/shipped/completed/cancelled/refunded
+- `userId`: Lọc theo user ID
+- `startDate`: Ngày bắt đầu (YYYY-MM-DD)
+- `endDate`: Ngày kết thúc (YYYY-MM-DD)
+- `sort`: createdAt/total/status (default: createdAt)
+- `order`: asc/desc (default: desc)
+- `search`: Tìm kiếm theo order code hoặc customer name
+
+**Response Success (200):**
+
+```json
+{
+  "status": true,
+  "data": {
+    "orders": [
+      {
+        "_id": "64f1a2b3c4d5e6f7a8b9c0d1",
+        "code": "ORD-20230901-001",
+        "userId": "64f1a2b3c4d5e6f7a8b9c0d2",
+        "customer": {
+          "fullName": "Nguyễn Văn A",
+          "email": "user@example.com",
+          "phone": "0123456789"
+        },
+        "items": [...],
+        "shippingAddress": {...},
+        "subtotal": 500000,
+        "discount": 0,
+        "shippingFee": 30000,
+        "total": 530000,
+        "status": "pending",
+        "timeline": [...],
+        "payment": {...},
+        "createdAt": "2023-09-01T00:00:00.000Z"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 20,
+      "total": 150,
+      "pages": 8
+    }
+  }
+}
+```
+
+### 7.6 Lấy chi tiết đơn hàng (Admin)
+
+```http
+GET /orders/admin/:id
+```
+
+**Headers:** `Authorization: Bearer <admin_token>`
+
+**Response Success (200):** trả về chi tiết đơn hàng đầy đủ.
+
+### 7.7 Thống kê đơn hàng (Admin)
+
+```http
+GET /orders/admin/stats?period=7d&status=all
+```
+
+**Headers:** `Authorization: Bearer <admin_token>`
+
+**Query Parameters:**
+- `period`: 1d/7d/30d/90d (default: 7d)
+- `status`: all/pending/paid/processing/shipped/completed/cancelled/refunded
+
+**Response Success (200):**
+
+```json
+{
+  "status": true,
+  "data": {
+    "period": "7d",
+    "overview": {
+      "totalOrders": 150,
+      "totalRevenue": 45000000,
+      "averageOrderValue": 300000,
+      "statusBreakdown": {
+        "pending": 25,
+        "paid": 30,
+        "processing": 20,
+        "shipped": 15,
+        "completed": 50,
+        "cancelled": 8,
+        "refunded": 2
+      }
+    },
+    "dailyStats": [
+      {
+        "date": "2023-09-01",
+        "orders": 20,
+        "revenue": 6000000
+      }
+    ],
+    "topCustomers": [
+      {
+        "userId": "64f1a2b3c4d5e6f7a8b9c0d1",
+        "fullName": "Nguyễn Văn A",
+        "totalOrders": 5,
+        "totalSpent": 1500000
+      }
+    ]
+  }
+}
+```
+
+### 7.8 Xuất danh sách đơn hàng (Admin)
+
+```http
+GET /orders/admin/export?format=csv&status=all&startDate=2023-09-01&endDate=2023-09-30
+```
+
+**Headers:** `Authorization: Bearer <admin_token>`
+
+**Query Parameters:**
+- `format`: csv/xlsx (default: csv)
+- `status`: all/pending/paid/processing/shipped/completed/cancelled/refunded
+- `startDate`: Ngày bắt đầu (YYYY-MM-DD)
+- `endDate`: Ngày kết thúc (YYYY-MM-DD)
+
+**Response Success (200):** trả về file CSV/Excel.
+
 ---
 
 ## 8. Payments (`/payments`)
