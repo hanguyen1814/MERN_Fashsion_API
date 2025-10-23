@@ -6,18 +6,25 @@ const {
   paginationValidation,
 } = require("../middlewares/validation");
 const { rbac, requireStaffOrAdmin } = require("../middlewares/rbac");
+const trackEvents = require("../middlewares/trackEvents");
 
 // Public routes
 router.get("/", paginationValidation.query, ProductController.list);
-router.get("/search", ProductController.simpleSearch);
-router.get("/search-advanced", ProductController.search);
+router.get("/search", trackEvents("search"), ProductController.simpleSearch);
+router.get("/search-advanced", trackEvents("search"), ProductController.search);
 router.get("/suggest", ProductController.suggest);
 router.get("/related", ProductController.related);
+router.get("/recommendations", auth(), ProductController.recommendations);
 router.get("/stats", ProductController.stats);
 router.get("/category/:slug", ProductController.getByCategorySlug);
 router.get("/brand/:slug", ProductController.getByBrandSlug);
-router.get("/:slug", ProductController.detail);
-router.get("/id/:id", productValidation.productId, ProductController.info);
+router.get("/:slug", trackEvents("view"), ProductController.detail);
+router.get(
+  "/id/:id",
+  productValidation.productId,
+  trackEvents("view"),
+  ProductController.info
+);
 
 // Admin/Staff routes
 router.post(

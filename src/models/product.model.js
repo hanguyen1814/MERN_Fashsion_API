@@ -9,8 +9,10 @@ const VariantSchema = new mongoose.Schema(
     compareAtPrice: Number,
     discount: { type: Number, default: 0 },
     stock: { type: Number, default: 0, min: 0 },
-    image: String,
-    images: [String],
+    image: String, // URL ảnh chính của variant
+    images: [String], // Mảng URL ảnh gallery của variant
+    imageKey: String, // S3 key của ảnh chính
+    imageKeys: [String], // Mảng S3 keys của ảnh gallery
     attrs: mongoose.Schema.Types.Mixed, // material, fit, ... (thay cho models/variant_models)
   },
   { _id: false }
@@ -30,7 +32,12 @@ const ProductSchema = new mongoose.Schema(
     brandId: { type: mongoose.Schema.Types.ObjectId, ref: "Brand" },
     categoryIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "Category" }],
     tags: [String],
-    image: String,
+    image: String, // URL ảnh chính của sản phẩm
+    images: [String], // Mảng URL ảnh gallery của sản phẩm
+    imageKey: String, // S3 key của ảnh chính
+    imageKeys: [String], // Mảng S3 keys của ảnh gallery
+    thumbnailImage: String, // URL ảnh thumbnail
+    thumbnailImageKey: String, // S3 key của ảnh thumbnail
     variants: {
       type: [VariantSchema],
       validate: (v) => Array.isArray(v) && v.length > 0,

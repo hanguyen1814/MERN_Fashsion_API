@@ -4,6 +4,7 @@
   "scripts": {
     "test": "node test/run-tests.js",
     "test:security": "node test/security-test.js",
+    "test:telegram": "node test/telegram-test.js",
     "dev": "nodemon src/server.js",
     "logs:analyze": "node scripts/analyze-logs.js summary",
     "logs:errors": "node scripts/analyze-logs.js errors",
@@ -15,6 +16,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "aws-sdk": "^2.1692.0",
     "axios": "^1.12.2",
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",
@@ -30,6 +32,8 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.18.1",
     "morgan": "^1.10.1",
+    "multer": "^2.0.2",
+    "node-cron": "^3.0.3",
     "slugify": "^1.6.6",
     "winston": "^3.18.3",
     "winston-daily-rotate-file": "^5.0.0",

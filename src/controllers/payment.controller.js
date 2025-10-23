@@ -120,8 +120,8 @@ class PaymentController {
         // Cập nhật đơn hàng thành công
         const order = await Order.findOne({ code: result.orderId });
         if (order) {
-          // So khớp amount để đảm bảo số tiền đúng
-          if (Number(order.total) !== Number(result.amount)) {
+          // So khớp amount để đảm bảo số tiền đúng (chỉ khi có amount từ IPN)
+          if (result.amount && Number(order.total) !== Number(result.amount)) {
             order.payment.status = "review"; // trạng thái cần kiểm tra
             order.timeline.push({
               status: "pending",

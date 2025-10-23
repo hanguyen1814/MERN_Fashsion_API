@@ -12,6 +12,8 @@ const { cspMiddleware, cspReportHandler } = require("./middlewares/csp");
 const connectDB = require("./config/db");
 const logger = require("./config/logger");
 const httpLogger = require("./middlewares/httpLogger");
+const { initializeBucket } = require("./config/s3");
+const schedulerService = require("./services/scheduler.service");
 
 const app = express();
 
@@ -72,8 +74,15 @@ app.use("/api", require("./routes"));
 app.use(require("./middlewares/error"));
 
 connectDB(process.env.MONGO_URI)
-  .then(() => {
+  .then(async () => {
     logger.info("Connected to MongoDB successfully");
+
+    // Khởi tạo S3 bucket
+    await initializeBucket();
+
+    // Khởi động scheduler service
+    schedulerService.start();
+
     app.listen(process.env.PORT, () => {
       logger.info(`🚀 Server running at http://localhost:${process.env.PORT}`);
       logger.info(`Environment: ${process.env.NODE_ENV || "development"}`);
@@ -94,4 +103,17 @@ process.on("uncaughtException", (err) => {
 process.on("unhandledRejection", (reason, promise) => {
   logger.error("Unhandled Rejection at:", promise, "reason:", reason);
   process.exit(1);
+});
+
+// Graceful shutdown
+process.on("SIGTERM", () => {
+  logger.info("SIGTERM received, shutting down gracefully");
+  schedulerService.stop();
+  process.exit(0);
+});
+
+process.on("SIGINT", () => {
+  logger.info("SIGINT received, shutting down gracefully");
+  schedulerService.stop();
+  process.exit(0);
 });

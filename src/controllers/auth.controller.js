@@ -8,6 +8,7 @@ const {
   clearTokenCookies,
 } = require("../middlewares/cookieSecurity");
 const logger = require("../config/logger");
+const telegramService = require("../services/telegram.service");
 
 class AuthController {
   /**
@@ -100,6 +101,21 @@ class AuthController {
       ? await user.comparePassword(password)
       : await bcrypt.compare(password, user.passwordHash);
     if (!okPass) {
+      // Tăng số lần đăng nhập thất bại
+      user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+      user.lastFailedLogin = new Date();
+      await user.save();
+
+      const loginFailureData = {
+        email,
+        ip: req.ip,
+        userAgent: req.get("User-Agent"),
+        attemptCount: user.failedLoginAttempts,
+        reason: "invalid_password",
+        timestamp: new Date().toISOString(),
+        requestId: req.requestId,
+      };
+
       logger.warn(`Login failed - Invalid password for email: ${email}`, {
         userId: user._id,
         email,
@@ -108,8 +124,21 @@ class AuthController {
         requestId: req.requestId,
         category: "user_login_failed",
         action: "login_failed",
+        failedAttempts: user.failedLoginAttempts,
       });
+
+      // Gửi cảnh báo Telegram nếu có nhiều lần thất bại
+      if (user.failedLoginAttempts >= 3) {
+        await telegramService.sendLoginFailureAlert(loginFailureData);
+      }
+
       return fail(res, 401, "Sai email hoặc mật khẩu");
+    }
+
+    // Reset failed login attempts khi đăng nhập thành công
+    if (user.failedLoginAttempts > 0) {
+      user.failedLoginAttempts = 0;
+      user.lastFailedLogin = null;
     }
 
     // Tạo access token và refresh token

@@ -47,6 +47,10 @@ const UserSchema = new mongoose.Schema(
     },
     lastLogin: Date,
     refreshToken: String,
+    failedLoginAttempts: { type: Number, default: 0 },
+    lastFailedLogin: Date,
+    isLocked: { type: Boolean, default: false },
+    lockUntil: Date,
   },
   { timestamps: true }
 );

@@ -1,6 +1,7 @@
 const Product = require("../models/product.model");
 const Category = require("../models/category.model");
 const Brand = require("../models/brand.model");
+const Event = require("../models/event.model");
 const asyncHandler = require("../utils/asyncHandler");
 const { ok, created, fail } = require("../utils/apiResponse");
 
@@ -828,6 +829,292 @@ class ProductController {
       },
     });
   });
+
+  /**
+   * Đề xuất sản phẩm dựa vào lịch sử hành vi người dùng
+   */
+  static recommendations = asyncHandler(async (req, res) => {
+    const { limit = 12, type = "mixed" } = req.query;
+    const userId = req.user._id;
+
+    try {
+      // Lấy lịch sử hành vi của người dùng trong 30 ngày gần nhất
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      const userEvents = await Event.find({
+        userId,
+        at: { $gte: thirtyDaysAgo },
+        type: { $in: ["view", "add_to_cart", "purchase"] },
+      })
+        .populate("productId")
+        .sort({ at: -1 })
+        .limit(100)
+        .lean();
+
+      if (userEvents.length === 0) {
+        // Nếu không có lịch sử, trả về sản phẩm phổ biến
+        const popularProducts = await Product.find({ status: "active" })
+          .sort({ salesCount: -1, ratingAvg: -1 })
+          .limit(Number(limit))
+          .populate("brandId", "name logo")
+          .populate("categoryIds", "name slug")
+          .lean();
+
+        const data = popularProducts.map(mapProductSummary);
+        return res.json({
+          status: true,
+          data,
+          message: "Đề xuất dựa trên sản phẩm phổ biến",
+          type: "popular",
+        });
+      }
+
+      // Phân tích hành vi để tìm sở thích
+      const userPreferences = analyzeUserBehavior(userEvents);
+
+      let recommendedProducts = [];
+
+      switch (type) {
+        case "category":
+          recommendedProducts = await getCategoryBasedRecommendations(
+            userPreferences,
+            userId,
+            limit
+          );
+          break;
+        case "brand":
+          recommendedProducts = await getBrandBasedRecommendations(
+            userPreferences,
+            userId,
+            limit
+          );
+          break;
+        case "similar":
+          recommendedProducts = await getSimilarProductRecommendations(
+            userPreferences,
+            userId,
+            limit
+          );
+          break;
+        default:
+          // Mixed recommendations - kết hợp nhiều phương pháp
+          recommendedProducts = await getMixedRecommendations(
+            userPreferences,
+            userId,
+            limit
+          );
+      }
+
+      const data = recommendedProducts.map(mapProductSummary);
+
+      return res.json({
+        status: true,
+        data,
+        message: `Đề xuất dựa trên ${
+          type === "mixed" ? "hành vi tổng hợp" : type
+        }`,
+        type,
+        preferences: {
+          topCategories: userPreferences.topCategories.slice(0, 3),
+          topBrands: userPreferences.topBrands.slice(0, 3),
+          totalEvents: userEvents.length,
+        },
+      });
+    } catch (error) {
+      console.error("Recommendation error:", error);
+
+      // Fallback: trả về sản phẩm phổ biến
+      const fallbackProducts = await Product.find({ status: "active" })
+        .sort({ salesCount: -1, ratingAvg: -1 })
+        .limit(Number(limit))
+        .populate("brandId", "name logo")
+        .populate("categoryIds", "name slug")
+        .lean();
+
+      const data = fallbackProducts.map(mapProductSummary);
+      return res.json({
+        status: true,
+        data,
+        message: "Đề xuất dựa trên sản phẩm phổ biến",
+        type: "fallback",
+      });
+    }
+  });
+}
+
+// Helper functions for recommendation logic
+function analyzeUserBehavior(events) {
+  const categoryCount = {};
+  const brandCount = {};
+  const productCount = {};
+  const eventWeights = { purchase: 3, add_to_cart: 2, view: 1 };
+
+  events.forEach((event) => {
+    if (!event.productId) return;
+
+    const product = event.productId;
+    const weight = eventWeights[event.type] || 1;
+
+    // Đếm categories
+    if (product.categoryIds) {
+      product.categoryIds.forEach((catId) => {
+        categoryCount[catId] = (categoryCount[catId] || 0) + weight;
+      });
+    }
+
+    // Đếm brands
+    if (product.brandId) {
+      brandCount[product.brandId] = (brandCount[product.brandId] || 0) + weight;
+    }
+
+    // Đếm products
+    productCount[product._id] = (productCount[product._id] || 0) + weight;
+  });
+
+  return {
+    topCategories: Object.entries(categoryCount)
+      .sort(([, a], [, b]) => b - a)
+      .map(([id]) => id),
+    topBrands: Object.entries(brandCount)
+      .sort(([, a], [, b]) => b - a)
+      .map(([id]) => id),
+    topProducts: Object.entries(productCount)
+      .sort(([, a], [, b]) => b - a)
+      .map(([id]) => id),
+  };
+}
+
+async function getCategoryBasedRecommendations(preferences, userId, limit) {
+  if (preferences.topCategories.length === 0) return [];
+
+  const excludeProducts = await Event.distinct("productId", {
+    userId,
+    productId: { $exists: true },
+  });
+
+  return Product.find({
+    status: "active",
+    categoryIds: { $in: preferences.topCategories },
+    _id: { $nin: excludeProducts },
+  })
+    .sort({ ratingAvg: -1, salesCount: -1 })
+    .limit(Number(limit))
+    .populate("brandId", "name logo")
+    .populate("categoryIds", "name slug")
+    .lean();
+}
+
+async function getBrandBasedRecommendations(preferences, userId, limit) {
+  if (preferences.topBrands.length === 0) return [];
+
+  const excludeProducts = await Event.distinct("productId", {
+    userId,
+    productId: { $exists: true },
+  });
+
+  return Product.find({
+    status: "active",
+    brandId: { $in: preferences.topBrands },
+    _id: { $nin: excludeProducts },
+  })
+    .sort({ ratingAvg: -1, salesCount: -1 })
+    .limit(Number(limit))
+    .populate("brandId", "name logo")
+    .populate("categoryIds", "name slug")
+    .lean();
+}
+
+async function getSimilarProductRecommendations(preferences, userId, limit) {
+  if (preferences.topProducts.length === 0) return [];
+
+  // Lấy thông tin sản phẩm đã tương tác
+  const interactedProducts = await Product.find({
+    _id: { $in: preferences.topProducts.slice(0, 5) },
+    status: "active",
+  })
+    .populate("categoryIds")
+    .populate("brandId")
+    .lean();
+
+  if (interactedProducts.length === 0) return [];
+
+  // Tìm sản phẩm tương tự dựa trên categories và brands
+  const similarCategories = [
+    ...new Set(
+      interactedProducts.flatMap((p) => p.categoryIds?.map((c) => c._id) || [])
+    ),
+  ];
+  const similarBrands = [
+    ...new Set(interactedProducts.map((p) => p.brandId?._id).filter(Boolean)),
+  ];
+
+  const excludeProducts = await Event.distinct("productId", {
+    userId,
+    productId: { $exists: true },
+  });
+
+  return Product.find({
+    status: "active",
+    _id: { $nin: excludeProducts },
+    $or: [
+      { categoryIds: { $in: similarCategories } },
+      { brandId: { $in: similarBrands } },
+    ],
+  })
+    .sort({ ratingAvg: -1, salesCount: -1 })
+    .limit(Number(limit))
+    .populate("brandId", "name logo")
+    .populate("categoryIds", "name slug")
+    .lean();
+}
+
+async function getMixedRecommendations(preferences, userId, limit) {
+  const limitPerType = Math.ceil(Number(limit) / 3);
+  const excludeProducts = await Event.distinct("productId", {
+    userId,
+    productId: { $exists: true },
+  });
+
+  const [categoryBased, brandBased, similarBased] = await Promise.all([
+    preferences.topCategories.length > 0
+      ? Product.find({
+          status: "active",
+          categoryIds: { $in: preferences.topCategories },
+          _id: { $nin: excludeProducts },
+        })
+          .sort({ ratingAvg: -1, salesCount: -1 })
+          .limit(limitPerType)
+          .populate("brandId", "name logo")
+          .populate("categoryIds", "name slug")
+          .lean()
+      : [],
+
+    preferences.topBrands.length > 0
+      ? Product.find({
+          status: "active",
+          brandId: { $in: preferences.topBrands },
+          _id: { $nin: excludeProducts },
+        })
+          .sort({ ratingAvg: -1, salesCount: -1 })
+          .limit(limitPerType)
+          .populate("brandId", "name logo")
+          .populate("categoryIds", "name slug")
+          .lean()
+      : [],
+
+    getSimilarProductRecommendations(preferences, userId, limitPerType),
+  ]);
+
+  // Kết hợp và loại bỏ trùng lặp
+  const allProducts = [...categoryBased, ...brandBased, ...similarBased];
+  const uniqueProducts = allProducts.filter(
+    (product, index, self) =>
+      index ===
+      self.findIndex((p) => p._id.toString() === product._id.toString())
+  );
+
+  return uniqueProducts.slice(0, Number(limit));
 }
 
 module.exports = ProductController;

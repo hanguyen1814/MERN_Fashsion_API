@@ -56,7 +56,7 @@ const PaymentInfoSchema = new mongoose.Schema(
     transactionId: String,
     status: {
       type: String,
-      enum: ["pending", "authorized", "paid", "failed", "refunded"],
+      enum: ["pending", "authorized", "paid", "failed", "refunded", "review"],
       default: "pending",
     },
     raw: mongoose.Schema.Types.Mixed, // Lưu thông tin raw từ payment gateway
