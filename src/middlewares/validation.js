@@ -209,16 +209,46 @@ const orderValidation = {
 
 // Validation rules cho Review
 const reviewValidation = {
+  productIdParam: [
+    param("productId").isMongoId().withMessage("ID sản phẩm không hợp lệ"),
+    handleValidationErrors,
+  ],
+  reviewIdParam: [
+    param("id").isMongoId().withMessage("ID đánh giá không hợp lệ"),
+    handleValidationErrors,
+  ],
   create: [
     body("productId").isMongoId().withMessage("ID sản phẩm không hợp lệ"),
     body("rating")
       .isInt({ min: 1, max: 5 })
       .withMessage("Đánh giá phải từ 1-5 sao"),
-    body("comment")
+    body("content")
       .optional()
       .trim()
       .isLength({ max: 1000 })
-      .withMessage("Bình luận không được quá 1000 ký tự"),
+      .withMessage("Nội dung không được quá 1000 ký tự"),
+    body("images").optional().isArray({ max: 5 }).withMessage("Tối đa 5 ảnh"),
+    body("images.*")
+      .optional()
+      .isURL()
+      .withMessage("Đường dẫn ảnh không hợp lệ"),
+    handleValidationErrors,
+  ],
+  update: [
+    body("rating")
+      .optional()
+      .isInt({ min: 1, max: 5 })
+      .withMessage("Đánh giá phải từ 1-5 sao"),
+    body("content")
+      .optional()
+      .trim()
+      .isLength({ max: 1000 })
+      .withMessage("Nội dung không được quá 1000 ký tự"),
+    body("images").optional().isArray({ max: 5 }).withMessage("Tối đa 5 ảnh"),
+    body("images.*")
+      .optional()
+      .isURL()
+      .withMessage("Đường dẫn ảnh không hợp lệ"),
     handleValidationErrors,
   ],
 };
@@ -236,7 +266,14 @@ const paginationValidation = {
       .withMessage("Giới hạn phải từ 1-100"),
     query("sort")
       .optional()
-      .isIn(["createdAt", "-createdAt", "name", "-name", "price", "-price"])
+      .isIn([
+        "createdAt",
+        "-createdAt",
+        "rating",
+        "-rating",
+        "isVerifiedPurchase",
+        "-isVerifiedPurchase",
+      ])
       .withMessage("Sắp xếp không hợp lệ"),
     handleValidationErrors,
   ],

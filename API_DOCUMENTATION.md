@@ -1481,10 +1481,45 @@ POST /payments/webhook
 
 ## 9. Reviews (`/reviews`)
 
-### 9.1 Lấy đánh giá theo sản phẩm
+### 9.1 Lấy đánh giá theo sản phẩm (có phân trang và sắp xếp)
 
 ```http
-GET /reviews/product/:productId
+GET /reviews/product/:productId?page=1&limit=10&sort=-createdAt
+```
+
+**Query Parameters:**
+
+- `page`: Trang (default: 1)
+- `limit`: Số item/trang (default: 10, max: 100)
+- `sort`: `createdAt | -createdAt | rating | -rating | isVerifiedPurchase | -isVerifiedPurchase` (default: `-createdAt`)
+
+**Response Success (200):**
+
+```json
+{
+  "status": true,
+  "data": {
+    "items": [
+      {
+        "_id": "64f1a2b3c4d5e6f7a8b9c0d1",
+        "userId": "64f1a2b3c4d5e6f7a8b9c0d2",
+        "productId": "64f1a2b3c4d5e6f7a8b9c0d3",
+        "rating": 5,
+        "content": "Sản phẩm rất tốt, chất lượng cao",
+        "images": ["https://res.cloudinary.com/..."],
+        "isVerifiedPurchase": true,
+        "createdAt": "2023-09-01T00:00:00.000Z"
+      }
+    ],
+    "pagination": { "page": 1, "limit": 10, "total": 35, "totalPages": 4 }
+  }
+}
+```
+
+### 9.2 Lấy tóm tắt rating theo sản phẩm
+
+```http
+GET /reviews/product/:productId/summary
 ```
 
 **Response Success (200):**
@@ -1492,21 +1527,15 @@ GET /reviews/product/:productId
 ```json
 {
   "status": true,
-  "data": [
-    {
-      "_id": "64f1a2b3c4d5e6f7a8b9c0d1",
-      "userId": "64f1a2b3c4d5e6f7a8b9c0d2",
-      "productId": "64f1a2b3c4d5e6f7a8b9c0d3",
-      "rating": 5,
-      "content": "Sản phẩm rất tốt, chất lượng cao",
-      "isVerifiedPurchase": true,
-      "createdAt": "2023-09-01T00:00:00.000Z"
-    }
-  ]
+  "data": {
+    "ratingAvg": 4.35,
+    "ratingCount": 52,
+    "distribution": { "1": 2, "2": 3, "3": 7, "4": 18, "5": 22 }
+  }
 }
 ```
 
-### 9.2 Tạo đánh giá
+### 9.3 Tạo đánh giá (hỗ trợ upload ảnh)
 
 ```http
 POST /reviews
@@ -1514,50 +1543,62 @@ POST /reviews
 
 **Headers:** `Authorization: Bearer <token>`
 
-**Body:**
+Hỗ trợ 2 cách gửi ảnh:
+
+- Gửi mảng URL trong body JSON: `images: string[]` (tối đa 5)
+- Hoặc dùng `multipart/form-data` với field `images` (tối đa 5 file, 10MB/file)
+
+**Body (JSON):**
 
 ```json
 {
   "productId": "64f1a2b3c4d5e6f7a8b9c0d1",
   "rating": 5,
-  "content": "Sản phẩm rất tốt, chất lượng cao. Tôi rất hài lòng với việc mua sắm này."
+  "content": "Sản phẩm rất tốt, chất lượng cao.",
+  "images": [
+    "https://res.cloudinary.com/.../reviews/a.jpg",
+    "https://res.cloudinary.com/.../reviews/b.jpg"
+  ]
 }
 ```
 
-**Validation:**
+**Form Data (multipart):**
 
-- `productId`: MongoDB ObjectId hợp lệ
+- `images`: File[] (tối đa 5)
+- Các trường JSON khác gửi qua body JSON hoặc field text tương đương
+
+**Validation & Sanitization:**
+
+- `productId`: ObjectId hợp lệ
 - `rating`: 1-5 (bắt buộc)
-- `content`: Tối đa 1000 ký tự (optional)
+- `content`: tối đa 1000 ký tự, được sanitize server-side (loại bỏ HTML/script)
+- `images`: tối đa 5 ảnh, chấp nhận URL hợp lệ hoặc file ảnh; ảnh upload sẽ được lưu Cloudinary
 
-**Response Success (201):**
+**Rate limit:** 20 yêu cầu ghi/15 phút trên mỗi IP cho POST/PUT/DELETE `/reviews`
 
-```json
-{
-  "status": true,
-  "data": {
-    "_id": "64f1a2b3c4d5e6f7a8b9c0d1",
-    "userId": "64f1a2b3c4d5e6f7a8b9c0d2",
-    "productId": "64f1a2b3c4d5e6f7a8b9c0d3",
-    "rating": 5,
-    "content": "Sản phẩm rất tốt, chất lượng cao",
-    "isVerifiedPurchase": true,
-    "createdAt": "2023-09-01T00:00:00.000Z"
-  }
-}
+**Response Success (201):** trả về review đã tạo.
+
+### 9.4 Cập nhật đánh giá
+
+```http
+PUT /reviews/:id
 ```
 
-**Response Error (409):**
+**Headers:** `Authorization: Bearer <token>`
 
-```json
-{
-  "status": false,
-  "error": {
-    "code": 409,
-    "message": "Mỗi sản phẩm chỉ được đánh giá 1 lần"
-  }
-}
+Hỗ trợ JSON và `multipart/form-data` như phần tạo. Chỉ chủ sở hữu review hoặc staff/admin mới được phép.
+
+### 9.5 Xóa đánh giá
+
+```http
+DELETE /reviews/:id
 ```
+
+Chỉ chủ sở hữu review hoặc staff/admin mới được phép.
+
+### Ghi chú về cập nhật điểm rating sản phẩm
+
+- Mỗi khi tạo/sửa/xóa review, `ratingAvg` và `ratingCount` của sản phẩm được cập nhật bằng MongoDB aggregation để đảm bảo hiệu năng và độ chính xác.
 
 ---
 
@@ -2303,6 +2344,7 @@ POST /upload/signature
   productId: ObjectId (ref: Product),
   rating: Number (1-5),
   content: String,
+  images: [String], // tối đa 5 URL ảnh
   isVerifiedPurchase: Boolean,
   createdAt: Date,
   updatedAt: Date
@@ -2334,7 +2376,8 @@ POST /upload/signature
 ### 2. Rate Limiting
 
 - Auth endpoints: 20 requests/15 phút
-- Các endpoint khác không giới hạn
+- Review write endpoints (POST/PUT/DELETE /reviews): 20 requests/15 phút/IP
+- Các endpoint khác: không giới hạn theo mặc định
 
 ### 3. Input Validation
 
@@ -2433,10 +2476,9 @@ FRONTEND_URL=http://localhost:3001
 
 ---
 
-_Tài liệu này được cập nhật lần cuối: 2025-11-03_
+_Tài liệu này được cập nhật lần cuối: 2025-11-04_
 
 **Thay đổi gần đây:**
 
-- Đã thay thế S3 upload bằng Cloudinary upload
-- Thêm endpoints upload với transformation tự động
-- Thêm endpoint transform URL on-the-fly
+- Reviews: phân trang/sort nâng cao, endpoint summary, hỗ trợ upload ảnh (multipart/URL), giới hạn 5 ảnh, sanitization server-side, rate-limit write 20/15m, cập nhật `ratingAvg/ratingCount` bằng aggregation.
+- Upload: giữ nguyên các endpoint; bổ sung lưu ý Cloudinary trong phần reviews.

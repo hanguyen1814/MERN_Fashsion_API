@@ -1465,12 +1465,12 @@
             "name": "Reviews",
             "item": [
                 {
-                    "name": "Get Reviews by Product",
+                    "name": "Get Reviews by Product (paged/sorted)",
                     "request": {
                         "method": "GET",
                         "header": [],
                         "url": {
-                            "raw": "{{baseUrl}}/reviews/product/64f1a2b3c4d5e6f7a8b9c0d1",
+                            "raw": "{{baseUrl}}/reviews/product/64f1a2b3c4d5e6f7a8b9c0d1?page=1&limit=10&sort=-createdAt",
                             "host": [
                                 "{{baseUrl}}"
                             ],
@@ -1478,13 +1478,47 @@
                                 "reviews",
                                 "product",
                                 "64f1a2b3c4d5e6f7a8b9c0d1"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "10"
+                                },
+                                {
+                                    "key": "sort",
+                                    "value": "-createdAt"
+                                }
                             ]
                         }
                     },
                     "response": []
                 },
                 {
-                    "name": "Create Review",
+                    "name": "Get Rating Summary by Product",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/reviews/product/64f1a2b3c4d5e6f7a8b9c0d1/summary",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "reviews",
+                                "product",
+                                "64f1a2b3c4d5e6f7a8b9c0d1",
+                                "summary"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Create Review (JSON)",
                     "request": {
                         "auth": {
                             "type": "bearer",
@@ -1505,7 +1539,7 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n  \"productId\": \"64f1a2b3c4d5e6f7a8b9c0d1\",\n  \"rating\": 5,\n  \"content\": \"Sản phẩm rất tốt, chất lượng cao. Tôi rất hài lòng với việc mua sắm này.\"\n}"
+                            "raw": "{\n  \"productId\": \"64f1a2b3c4d5e6f7a8b9c0d1\",\n  \"rating\": 5,\n  \"content\": \"Sản phẩm rất tốt, chất lượng cao.\",\n  \"images\": [\n    \"https://res.cloudinary.com/demo/image/upload/v1/reviews/a.jpg\",\n    \"https://res.cloudinary.com/demo/image/upload/v1/reviews/b.jpg\"\n  ]\n}"
                         },
                         "url": {
                             "raw": "{{baseUrl}}/reviews",
@@ -1514,6 +1548,134 @@
                             ],
                             "path": [
                                 "reviews"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Create Review (multipart with images)",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [],
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "productId",
+                                    "value": "64f1a2b3c4d5e6f7a8b9c0d1",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "rating",
+                                    "value": "5",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "content",
+                                    "value": "Sản phẩm rất tốt, chất lượng cao.",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "images",
+                                    "type": "file",
+                                    "src": []
+                                }
+                            ]
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/reviews",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "reviews"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Update Review (multipart)",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "PUT",
+                        "header": [],
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "rating",
+                                    "value": "4",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "content",
+                                    "value": "Cập nhật đánh giá.",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "images",
+                                    "type": "file",
+                                    "src": []
+                                }
+                            ]
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/reviews/64f1a2b3c4d5e6f7a8b9c0d9",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "reviews",
+                                "64f1a2b3c4d5e6f7a8b9c0d9"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Delete Review",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "DELETE",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/reviews/64f1a2b3c4d5e6f7a8b9c0d9",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "reviews",
+                                "64f1a2b3c4d5e6f7a8b9c0d9"
                             ]
                         }
                     },
