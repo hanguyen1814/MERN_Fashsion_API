@@ -12,7 +12,8 @@ const Category = require("../models/category.model");
 
 // ENV: đặt MONGODB_URI trong .env hoặc truyền qua process.env
 const MONGODB_URI =
-  process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/mern_fashion";
+  process.env.MONGODB_URI ||
+  "mongodb+srv://admin:Ahihi123@shoppingmaster.4g4hnjb.mongodb.net/mern_fashion";
 const INPUT_PATH = path.resolve(__dirname, "./input.json");
 
 function toSlug(input) {
@@ -38,6 +39,40 @@ async function ensureBrand(brandName) {
     { new: true, upsert: true }
   );
   return brand?._id || null;
+}
+
+async function findBrandByNameOrSlug(input) {
+  if (!input) return null;
+
+  // Kiểm tra nếu là ID (ObjectId - 24 ký tự hex)
+  if (typeof input === "string" && /^[0-9a-fA-F]{24}$/.test(input)) {
+    const brand = await Brand.findById(input);
+    return brand?._id || null;
+  }
+
+  // Tìm theo slug hoặc name
+  const slug = toSlug(input);
+  const brand = await Brand.findOne({
+    $or: [{ slug }, { name: { $regex: new RegExp(input, "i") } }],
+  });
+  return brand?._id || null;
+}
+
+async function findCategoryByNameOrSlug(input) {
+  if (!input) return null;
+
+  // Kiểm tra nếu là ID (ObjectId - 24 ký tự hex)
+  if (typeof input === "string" && /^[0-9a-fA-F]{24}$/.test(input)) {
+    const category = await Category.findById(input);
+    return category?._id || null;
+  }
+
+  // Tìm theo slug hoặc name
+  const slug = toSlug(input);
+  const category = await Category.findOne({
+    $or: [{ slug }, { name: { $regex: new RegExp(input, "i") } }],
+  });
+  return category?._id || null;
 }
 
 // Tạm thời map một catid (từ dữ liệu nguồn) sang Category theo slug cat-<id>
@@ -226,8 +261,33 @@ function buildProductDoc(source, brandId, categoryIds) {
   return base;
 }
 
+// ============================================
+// CẤU HÌNH IMPORT
+// ============================================
+// Đặt brand/category tùy chỉnh ở đây
+// Có thể dùng: ID (24 ký tự hex), name, hoặc slug
+// Để null hoặc "" nếu muốn tự động tìm/tạo từ dữ liệu
+const CUSTOM_BRAND = "68e3ed49c6629b49f95dc9a7"; // VD: "507f1f77bcf86cd799439011" (ID) hoặc "Nike" (name) hoặc "nike" (slug)
+const CUSTOM_CATEGORY = "68dbaa4ed3d896c8ed09807c"; // VD: "507f1f77bcf86cd799439011" (ID) hoặc "Áo thun" (name) hoặc "ao-thun" (slug)
+// ============================================
+
 async function run() {
   await connectDB(MONGODB_URI);
+
+  // Hiển thị thông tin cấu hình
+  console.log("📋 Cấu hình import:");
+  console.log(`  - Input file: ${INPUT_PATH}`);
+  if (CUSTOM_BRAND) {
+    console.log(`  - Brand tùy chỉnh: ${CUSTOM_BRAND}`);
+  } else {
+    console.log(`  - Brand: Tự động tìm/tạo từ dữ liệu`);
+  }
+  if (CUSTOM_CATEGORY) {
+    console.log(`  - Category tùy chỉnh: ${CUSTOM_CATEGORY}`);
+  } else {
+    console.log(`  - Category: Tự động map từ catid`);
+  }
+  console.log("");
 
   const fileStat = fs.statSync(INPUT_PATH);
   if (fileStat.size > 200 * 1024 * 1024) {
@@ -258,10 +318,36 @@ async function run() {
     // Chuẩn bị các thao tác upsert song song
     const ops = await Promise.all(
       chunk.map(async (source) => {
-        const brandName =
-          source?.batch_item_for_item_card_full?.brand || source?.brand || "";
-        const brandId = await ensureBrand(brandName);
-        const categoryIds = await mapCategoryIds(source);
+        // Nếu có brand tùy chỉnh, dùng nó; nếu không thì tự động tìm/tạo
+        let brandId = null;
+        if (CUSTOM_BRAND) {
+          brandId = await findBrandByNameOrSlug(CUSTOM_BRAND);
+          if (!brandId) {
+            console.warn(
+              `⚠️ Không tìm thấy brand "${CUSTOM_BRAND}", bỏ qua brand cho sản phẩm này`
+            );
+          }
+        } else {
+          const brandName =
+            source?.batch_item_for_item_card_full?.brand || source?.brand || "";
+          brandId = await ensureBrand(brandName);
+        }
+
+        // Nếu có category tùy chỉnh, dùng nó; nếu không thì tự động map
+        let categoryIds = [];
+        if (CUSTOM_CATEGORY) {
+          const categoryId = await findCategoryByNameOrSlug(CUSTOM_CATEGORY);
+          if (categoryId) {
+            categoryIds = [categoryId];
+          } else {
+            console.warn(
+              `⚠️ Không tìm thấy category "${CUSTOM_CATEGORY}", bỏ qua category cho sản phẩm này`
+            );
+          }
+        } else {
+          categoryIds = await mapCategoryIds(source);
+        }
+
         const doc = buildProductDoc(source, brandId, categoryIds);
 
         return {

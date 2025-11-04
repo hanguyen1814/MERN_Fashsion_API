@@ -1232,6 +1232,144 @@ PATCH /orders/:id/status
 
 **Response Success (200):** trả về object đơn hàng đã cập nhật.
 
+### 7.5 Lấy danh sách đơn hàng (Admin)
+
+```http
+GET /orders/admin?page=1&limit=20&status=pending&userId=64f1a2b3c4d5e6f7a8b9c0d1&startDate=2023-09-01&endDate=2023-09-30&sort=createdAt&order=desc
+```
+
+**Headers:** `Authorization: Bearer <admin_token>`
+
+**Query Parameters:**
+
+- `page`: Số trang (default: 1)
+- `limit`: Số item/trang (default: 20)
+- `status`: pending/paid/processing/shipped/completed/cancelled/refunded
+- `userId`: Lọc theo user ID
+- `startDate`: Ngày bắt đầu (YYYY-MM-DD)
+- `endDate`: Ngày kết thúc (YYYY-MM-DD)
+- `sort`: createdAt/total/status (default: createdAt)
+- `order`: asc/desc (default: desc)
+- `search`: Tìm kiếm theo order code hoặc customer name
+
+**Response Success (200):**
+
+```json
+{
+  "status": true,
+  "data": {
+    "orders": [
+      {
+        "_id": "64f1a2b3c4d5e6f7a8b9c0d1",
+        "code": "ORD-20230901-001",
+        "userId": "64f1a2b3c4d5e6f7a8b9c0d2",
+        "customer": {
+          "fullName": "Nguyễn Văn A",
+          "email": "user@example.com",
+          "phone": "0123456789"
+        },
+        "items": [...],
+        "shippingAddress": {...},
+        "subtotal": 500000,
+        "discount": 0,
+        "shippingFee": 30000,
+        "total": 530000,
+        "status": "pending",
+        "timeline": [...],
+        "payment": {...},
+        "createdAt": "2023-09-01T00:00:00.000Z"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 20,
+      "total": 150,
+      "pages": 8
+    }
+  }
+}
+```
+
+### 7.6 Lấy chi tiết đơn hàng (Admin)
+
+```http
+GET /orders/admin/:id
+```
+
+**Headers:** `Authorization: Bearer <admin_token>`
+
+**Response Success (200):** trả về chi tiết đơn hàng đầy đủ.
+
+### 7.7 Thống kê đơn hàng (Admin)
+
+```http
+GET /orders/admin/stats?period=7d&status=all
+```
+
+**Headers:** `Authorization: Bearer <admin_token>`
+
+**Query Parameters:**
+
+- `period`: 1d/7d/30d/90d (default: 7d)
+- `status`: all/pending/paid/processing/shipped/completed/cancelled/refunded
+
+**Response Success (200):**
+
+```json
+{
+  "status": true,
+  "data": {
+    "period": "7d",
+    "overview": {
+      "totalOrders": 150,
+      "totalRevenue": 45000000,
+      "averageOrderValue": 300000,
+      "statusBreakdown": {
+        "pending": 25,
+        "paid": 30,
+        "processing": 20,
+        "shipped": 15,
+        "completed": 50,
+        "cancelled": 8,
+        "refunded": 2
+      }
+    },
+    "dailyStats": [
+      {
+        "date": "2023-09-01",
+        "orders": 20,
+        "revenue": 6000000
+      }
+    ],
+    "topCustomers": [
+      {
+        "userId": "64f1a2b3c4d5e6f7a8b9c0d1",
+        "fullName": "Nguyễn Văn A",
+        "totalOrders": 5,
+        "totalSpent": 1500000
+      }
+    ]
+  }
+}
+```
+
+### 7.8 Xuất danh sách đơn hàng (Admin)
+
+```http
+GET /orders/admin/export?format=csv&status=all&startDate=2023-09-01&endDate=2023-09-30
+```
+
+**Headers:** `Authorization: Bearer <admin_token>`
+
+**Query Parameters:**
+
+- `format`: csv/xlsx (default: csv)
+- `status`: all/pending/paid/processing/shipped/completed/cancelled/refunded
+- `startDate`: Ngày bắt đầu (YYYY-MM-DD)
+- `endDate`: Ngày kết thúc (YYYY-MM-DD)
+
+**Response Success (200):** trả về file CSV/Excel.
+
 ---
 
 ## 8. Payments (`/payments`)
@@ -1640,6 +1778,314 @@ PUT /csp/violations/resolve-multiple
 
 ---
 
+## 12. Upload (`/upload`) - Admin/Staff Only
+
+### 12.1 Upload Single Image
+
+```http
+POST /upload/single
+```
+
+**Headers:** `Authorization: Bearer <admin_or_staff_token>`
+
+**Content-Type:** `multipart/form-data`
+
+**Form Data:**
+
+- `image`: File (image file, max 10MB)
+
+**Response Success (200):**
+
+```json
+{
+  "status": true,
+  "data": {
+    "url": "https://res.cloudinary.com/cloud_name/image/upload/v1234567890/products/abc123.jpg",
+    "publicId": "products/abc123",
+    "format": "jpg",
+    "width": 1920,
+    "height": 1080,
+    "bytes": 245678,
+    "createdAt": "2023-09-01T10:30:00.000Z",
+    "folder": "products"
+  },
+  "meta": {
+    "message": "Upload file thành công!"
+  }
+}
+```
+
+### 12.2 Upload Multiple Images
+
+```http
+POST /upload/multiple
+```
+
+**Headers:** `Authorization: Bearer <admin_or_staff_token>`
+
+**Content-Type:** `multipart/form-data`
+
+**Form Data:**
+
+- `images`: File[] (multiple image files, max 10 files, 10MB each)
+
+**Response Success (200):**
+
+```json
+{
+  "status": true,
+  "data": {
+    "successful": [
+      {
+        "url": "https://res.cloudinary.com/...",
+        "publicId": "products/abc123",
+        "format": "jpg",
+        "width": 1920,
+        "height": 1080,
+        "bytes": 245678,
+        "createdAt": "2023-09-01T10:30:00.000Z",
+        "folder": "products"
+      }
+    ],
+    "failed": [],
+    "total": 2,
+    "successCount": 2,
+    "failCount": 0
+  },
+  "meta": {
+    "message": "Upload files thành công!"
+  }
+}
+```
+
+### 12.3 Upload Product Images (with Auto Transformation)
+
+```http
+POST /upload/product
+```
+
+**Headers:** `Authorization: Bearer <admin_or_staff_token>`
+
+**Content-Type:** `multipart/form-data`
+
+**Form Data:**
+
+- `mainImage`: File (max 1) - Auto resize to 800x800
+- `galleryImages`: File[] (max 9) - Auto resize to 1200x1200
+- `thumbnailImage`: File (max 1) - Auto resize to 300x300, crop fill
+- `variantImages`: File[] (max 10) - Auto resize to 600x600
+- `productId`: String (optional) - Product ID for organizing files
+
+**Transformations Applied:**
+
+- `thumbnailImage` → 300x300, crop fill
+- `mainImage` → 800x800, limit (keep aspect ratio)
+- `galleryImages` → 1200x1200, limit
+- `variantImages` → 600x600, limit
+
+**Response Success (200):**
+
+```json
+{
+  "status": true,
+  "data": {
+    "mainImage": {
+      "successful": [
+        {
+          "url": "https://res.cloudinary.com/...",
+          "publicId": "products/product123-1234567890",
+          "format": "jpg",
+          "width": 800,
+          "height": 800,
+          "bytes": 150000,
+          "createdAt": "2023-09-01T10:30:00.000Z",
+          "folder": "products"
+        }
+      ],
+      "failed": [],
+      "total": 1,
+      "successCount": 1,
+      "failCount": 0
+    },
+    "galleryImages": {
+      "successful": [...],
+      "failed": [],
+      "total": 3,
+      "successCount": 3,
+      "failCount": 0
+    }
+  },
+  "meta": {
+    "message": "Upload product images thành công!"
+  }
+}
+```
+
+### 12.4 Delete Image
+
+```http
+DELETE /upload/:publicId?resourceType=image
+```
+
+**Headers:** `Authorization: Bearer <admin_or_staff_token>`
+
+**Path Parameters:**
+
+- `publicId`: Public ID của file trong Cloudinary (URL encoded)
+
+**Query Parameters:**
+
+- `resourceType`: image/video/raw (default: image)
+
+**Example:**
+
+```
+DELETE /upload/products%2Fabc123?resourceType=image
+```
+
+**Response Success (200):**
+
+```json
+{
+  "status": true,
+  "data": null,
+  "meta": {
+    "message": "Xóa file thành công!"
+  }
+}
+```
+
+### 12.5 Delete Multiple Images
+
+```http
+DELETE /upload/multiple?resourceType=image
+```
+
+**Headers:** `Authorization: Bearer <admin_or_staff_token>`
+
+**Body:**
+
+```json
+{
+  "publicIds": ["products/abc123", "products/def456", "products/ghi789"]
+}
+```
+
+**Query Parameters:**
+
+- `resourceType`: image/video/raw (default: image)
+
+**Response Success (200):**
+
+```json
+{
+  "status": true,
+  "data": {
+    "deleted": ["products/abc123", "products/def456"],
+    "failed": [
+      {
+        "publicId": "products/ghi789",
+        "error": "File không tồn tại"
+      }
+    ],
+    "total": 3,
+    "deletedCount": 2,
+    "failCount": 1
+  },
+  "meta": {
+    "message": "Xóa files thành công!"
+  }
+}
+```
+
+### 12.6 Get Transformed URL (Public)
+
+```http
+GET /upload/transform/:publicId?width=400&height=400&crop=fill&quality=auto&format=auto
+```
+
+**Path Parameters:**
+
+- `publicId`: Public ID của file (URL encoded)
+
+**Query Parameters:**
+
+- `width`: Width in pixels
+- `height`: Height in pixels
+- `crop`: Crop mode (fill, limit, fit, thumb, scale)
+- `quality`: Quality (auto, best, good, eco, low)
+- `format`: Format (auto, jpg, png, webp, avif)
+
+**Example:**
+
+```
+GET /upload/transform/products%2Fabc123?width=400&height=400&crop=fill
+```
+
+**Response Success (200):**
+
+```json
+{
+  "status": true,
+  "data": {
+    "url": "https://res.cloudinary.com/cloud_name/image/upload/c_fill,h_400,w_400/products/abc123.jpg",
+    "transformation": {
+      "width": 400,
+      "height": 400,
+      "crop": "fill"
+    }
+  },
+  "meta": {
+    "message": "Tạo transformed URL thành công!"
+  }
+}
+```
+
+### 12.7 Generate Upload Signature (for Client-side Upload)
+
+```http
+POST /upload/signature
+```
+
+**Headers:** `Authorization: Bearer <admin_or_staff_token>`
+
+**Body:**
+
+```json
+{
+  "folder": "products",
+  "tags": ["tag1", "tag2"],
+  "resourceType": "image"
+}
+```
+
+**Response Success (200):**
+
+```json
+{
+  "status": true,
+  "data": {
+    "signature": "abc123...",
+    "timestamp": 1693567800,
+    "folder": "products",
+    "apiKey": "your_api_key",
+    "cloudName": "your_cloud_name",
+    "resourceType": "image"
+  },
+  "meta": {
+    "message": "Tạo upload signature thành công!"
+  }
+}
+```
+
+**Notes:**
+
+- Upload signature được sử dụng để upload trực tiếp từ client (không qua server)
+- Requires upload preset configured in Cloudinary dashboard
+- See `CLOUDINARY_SETUP_GUIDE.md` for setup instructions
+
+---
+
 ## Error Codes
 
 ### HTTP Status Codes
@@ -1987,4 +2433,10 @@ FRONTEND_URL=http://localhost:3001
 
 ---
 
-_Tài liệu này được cập nhật lần cuối: 2023-09-01_
+_Tài liệu này được cập nhật lần cuối: 2025-11-03_
+
+**Thay đổi gần đây:**
+
+- Đã thay thế S3 upload bằng Cloudinary upload
+- Thêm endpoints upload với transformation tự động
+- Thêm endpoint transform URL on-the-fly

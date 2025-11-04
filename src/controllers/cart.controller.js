@@ -84,7 +84,7 @@ class CartController {
           : undefined;
         const minDiscount =
           Number.isFinite(minOrigin) && minOrigin > minPrice
-            ? minOrigin - minPrice
+            ? Math.round(((minOrigin - minPrice) / minOrigin) * 100)
             : 0;
 
         aggregatedByProduct.set(productKey, {
@@ -111,7 +111,12 @@ class CartController {
             discount:
               Number(selectedRaw.compareAtPrice || 0) >
               Number(selectedRaw.price || 0)
-                ? Number(selectedRaw.compareAtPrice) - Number(selectedRaw.price)
+                ? Math.round(
+                    ((Number(selectedRaw.compareAtPrice) -
+                      Number(selectedRaw.price)) /
+                      Number(selectedRaw.compareAtPrice)) *
+                      100
+                  )
                 : Number(selectedRaw.discount || 0) || 0,
             stock: Number(selectedRaw.stock || 0),
             image: selectedRaw.image || null,
@@ -201,9 +206,29 @@ class CartController {
 
     // Kiểm tra item đã có trong giỏ chưa
     const existingItem = cart.items.find((item) => item.sku === sku);
+    const MAX_QUANTITY = 999; // Giới hạn tối đa mỗi sản phẩm
+
     if (existingItem) {
-      existingItem.quantity += Number(quantity);
+      const newQuantity = existingItem.quantity + Number(quantity);
+      if (newQuantity > MAX_QUANTITY) {
+        return fail(
+          res,
+          400,
+          `Số lượng tối đa cho mỗi sản phẩm là ${MAX_QUANTITY}`
+        );
+      }
+      if (variant.stock < newQuantity) {
+        return fail(res, 400, "Không đủ tồn kho cho số lượng này");
+      }
+      existingItem.quantity = newQuantity;
     } else {
+      if (quantity > MAX_QUANTITY) {
+        return fail(
+          res,
+          400,
+          `Số lượng tối đa cho mỗi sản phẩm là ${MAX_QUANTITY}`
+        );
+      }
       cart.items.push({
         productId,
         sku,
@@ -278,6 +303,15 @@ class CartController {
           return it.sku !== sku;
         });
       } else {
+        // Kiểm tra giới hạn số lượng
+        const MAX_QUANTITY = 999;
+        if (quantity > MAX_QUANTITY) {
+          return fail(
+            res,
+            400,
+            `Số lượng tối đa cho mỗi sản phẩm là ${MAX_QUANTITY}`
+          );
+        }
         // Kiểm tra tồn kho của sku hiện tại
         const product = await Product.findById(item.productId);
         const variant = product?.variants?.find((v) => v.sku === item.sku);

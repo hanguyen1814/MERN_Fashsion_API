@@ -46,13 +46,27 @@ class OrderController {
     session.startTransaction();
 
     try {
-      // Kiểm tra tồn kho và trừ kho
+      // Kiểm tra tồn kho, trừ kho và tính toán giá từ database
+      let subtotal = 0;
+      const orderItems = [];
+
       for (const item of cart.items) {
         const product = await Product.findById(item.productId).session(session);
-        const variant = product.variants.find((v) => v.sku === item.sku);
 
-        if (!variant || variant.stock < item.quantity) {
-          throw new Error(`SKU ${item.sku} hết hàng`);
+        // Kiểm tra sản phẩm tồn tại và trạng thái
+        if (!product) {
+          throw new Error(`Sản phẩm không tồn tại: ${item.productId}`);
+        }
+        if (product.status !== "active") {
+          throw new Error(`Sản phẩm không còn hoạt động: ${product.name}`);
+        }
+
+        const variant = product.variants.find((v) => v.sku === item.sku);
+        if (!variant) {
+          throw new Error(`SKU ${item.sku} không tồn tại`);
+        }
+        if (variant.stock < item.quantity) {
+          throw new Error(`SKU ${item.sku} hết hàng/không đủ tồn`);
         }
 
         // Trừ kho
@@ -72,20 +86,31 @@ class OrderController {
           ],
           { session }
         );
+
+        // Tính giá từ database (không dùng giá từ cart để tránh manipulation)
+        const price = variant.price;
+        subtotal += price * item.quantity;
+        orderItems.push({
+          productId: product._id,
+          sku: item.sku,
+          name: product.name,
+          price,
+          quantity: item.quantity,
+          image: variant.image || product.image,
+        });
       }
+
+      // Tính toán lại subtotal, discount, shipping, total từ DB
+      // Tạm thời không áp dụng coupon, phí ship tính theo quy tắc trong CartController
+      const discount = 0; // TODO: Implement coupon logic
+      const shippingFee = subtotal > 500000 ? 0 : 30000; // Free shipping over 500k
+      const total = subtotal - discount + shippingFee;
 
       // Tạo đơn hàng
       const orderData = {
         code: genOrderCode(),
         userId,
-        items: cart.items.map((item) => ({
-          productId: item.productId,
-          sku: item.sku,
-          name: item.name,
-          price: item.price,
-          quantity: item.quantity,
-          image: item.image,
-        })),
+        items: orderItems,
         shippingAddress: {
           fullName,
           phone,
@@ -95,11 +120,11 @@ class OrderController {
           province,
         },
         shippingMethod: "standard",
-        couponCode: cart.couponCode,
-        subtotal: cart.subtotal,
-        discount: cart.discount,
-        shippingFee: cart.shippingFee,
-        total: cart.total,
+        couponCode: undefined, // Bỏ qua coupon từ cart
+        subtotal,
+        discount,
+        shippingFee,
+        total,
         status: "pending",
         timeline: [
           {

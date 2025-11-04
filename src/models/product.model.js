@@ -2,7 +2,7 @@
 const mongoose = require("mongoose");
 const VariantSchema = new mongoose.Schema(
   {
-    sku: { type: String, required: true, unique: true },
+    sku: { type: String, required: true }, // Unique trong từng product, không unique toàn collection
     color: String,
     size: String,
     price: { type: Number, required: true, min: 0 },
@@ -40,7 +40,17 @@ const ProductSchema = new mongoose.Schema(
     thumbnailImageKey: String, // S3 key của ảnh thumbnail
     variants: {
       type: [VariantSchema],
-      validate: (v) => Array.isArray(v) && v.length > 0,
+      validate: {
+        validator: function (v) {
+          // Kiểm tra mảng có phần tử
+          if (!Array.isArray(v) || v.length === 0) return false;
+          // Kiểm tra SKU unique trong variants của cùng một product
+          const skus = v.map((variant) => variant.sku).filter(Boolean);
+          return skus.length === new Set(skus).size;
+        },
+        message:
+          "SKU phải unique trong từng sản phẩm và sản phẩm phải có ít nhất 1 variant",
+      },
     },
     status: {
       type: String,

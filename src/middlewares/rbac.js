@@ -1,5 +1,6 @@
 const User = require("../models/user.model");
 const { fail } = require("../utils/apiResponse");
+const logger = require("../config/logger");
 
 /**
  * Role-Based Access Control middleware
@@ -54,10 +55,10 @@ const PERMISSIONS = {
     "brand:delete:all",
     "order:read:all",
     "order:write:all",
+    "order:delete:all",
     "upload:read:all",
     "upload:write:all",
     "upload:delete:all",
-    "order:delete:all",
     "review:read:all",
     "review:write:all",
     "review:delete:all",
@@ -146,8 +147,8 @@ const rbac = (permission) => {
       }
 
       next();
-    } catch (Error) {
-      console.log(Error);
+    } catch (err) {
+      logger.error("RBAC error:", err);
       const { fail } = require("../utils/apiResponse");
       return fail(res, 500, "Lỗi kiểm tra quyền truy cập");
     }

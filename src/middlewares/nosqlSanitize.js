@@ -3,6 +3,8 @@
  * Thay thế cho express-mongo-sanitize để tương thích với Express 5.x
  */
 
+const logger = require("../config/logger");
+
 const sanitize = (obj) => {
   if (obj === null || obj === undefined) {
     return obj;
@@ -62,7 +64,7 @@ const nosqlSanitize = () => {
 
       next();
     } catch (error) {
-      console.error("NoSQL sanitization error:", error);
+      logger.error("NoSQL sanitization error:", error);
       next();
     }
   };

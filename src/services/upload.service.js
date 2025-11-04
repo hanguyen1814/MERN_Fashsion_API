@@ -1,310 +1,338 @@
-const { s3, BUCKET_NAME } = require('../config/s3');
-const path = require('path');
-const crypto = require('crypto');
+const {
+  cloudinary,
+  FOLDERS,
+  TRANSFORMATIONS,
+} = require("../config/cloudinary");
+const { Readable } = require("stream");
+const logger = require("../config/logger");
 
 class UploadService {
-    /**
-     * Upload file lên S3
-     * @param {Object} file - File object từ multer
-     * @param {string} folder - Thư mục lưu trữ (mặc định: 'products')
-     * @param {Object} metadata - Metadata tùy chỉnh
-     * @returns {Promise<Object>} - Thông tin file đã upload
-     */
-    static async uploadFile(file, folder = 'products', metadata = {}) {
-        try {
-            // Tạo tên file unique
-            const fileExtension = path.extname(file.originalname);
-            const fileName = `${crypto.randomUUID()}${fileExtension}`;
-            const key = `${folder}/${fileName}`;
+  /**
+   * Convert buffer sang stream cho Cloudinary
+   */
+  static bufferToStream(buffer) {
+    const stream = new Readable();
+    stream.push(buffer);
+    stream.push(null);
+    return stream;
+  }
 
-            // Chuẩn bị parameters cho upload
-            const uploadParams = {
-                Bucket: BUCKET_NAME,
-                Key: key,
-                Body: file.buffer,
-                ContentType: file.mimetype,
-                ACL: 'public-read',
-                Metadata: {
-                    originalName: file.originalname,
-                    uploadedAt: new Date().toISOString(),
-                    ...metadata
-                }
-            };
+  /**
+   * Upload file lên Cloudinary
+   * @param {Object} file - File object từ multer
+   * @param {string} folder - Thư mục lưu trữ (mặc định: 'products')
+   * @param {Object} options - Tùy chọn upload (transformation, public_id, etc.)
+   * @returns {Promise<Object>} - Thông tin file đã upload
+   */
+  static async uploadFile(file, folder = FOLDERS.products, options = {}) {
+    try {
+      const {
+        transformation = {},
+        publicId = null,
+        tags = [],
+        overwrite = false,
+      } = options;
 
-            // Upload file
-            const result = await s3.upload(uploadParams).promise();
+      return new Promise((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+          {
+            folder,
+            public_id: publicId,
+            resource_type: "auto", // Tự động detect image/video
+            transformation: transformation,
+            tags: ["mern-fashion", ...tags],
+            overwrite,
+            // Optimize tự động
+            fetch_format: "auto", // Tự động chọn format tốt nhất
+            quality: "auto",
+          },
+          (error, result) => {
+            if (error) {
+              // Log chi tiết lỗi để debug
+              logger.error("Cloudinary upload error:", {
+                message: error.message,
+                http_code: error.http_code,
+                name: error.name,
+                folder,
+                publicId,
+                cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+              });
 
-            return {
+              // Xử lý lỗi cụ thể
+              if (error.http_code === 401) {
+                logger.error(
+                  "Lỗi xác thực Cloudinary. Vui lòng kiểm tra lại CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY và CLOUDINARY_API_SECRET trong file .env"
+                );
+              }
+
+              reject(error);
+            } else {
+              resolve({
                 success: true,
                 data: {
-                    url: result.Location,
-                    key: key,
-                    fileName: fileName,
-                    originalName: file.originalname,
-                    size: file.size,
-                    contentType: file.mimetype,
-                    bucket: BUCKET_NAME
-                }
-            };
+                  url: result.secure_url,
+                  publicId: result.public_id,
+                  format: result.format,
+                  width: result.width,
+                  height: result.height,
+                  bytes: result.bytes,
+                  createdAt: result.created_at,
+                  folder: folder,
+                },
+              });
+            }
+          }
+        );
 
-        } catch (error) {
-            console.error('Lỗi khi upload file:', error);
-            return {
-                success: false,
-                error: error.message
-            };
-        }
+        // Upload từ buffer stream
+        this.bufferToStream(file.buffer).pipe(uploadStream);
+      });
+    } catch (error) {
+      logger.error("Upload file error:", error);
+      return {
+        success: false,
+        error: error.message,
+      };
     }
+  }
 
-    /**
-     * Upload nhiều file cùng lúc
-     * @param {Array} files - Mảng file objects từ multer
-     * @param {string} folder - Thư mục lưu trữ
-     * @param {Object} metadata - Metadata tùy chỉnh
-     * @returns {Promise<Object>} - Kết quả upload
-     */
-    static async uploadMultipleFiles(files, folder = 'products', metadata = {}) {
-        try {
-            const uploadPromises = files.map(file => 
-                this.uploadFile(file, folder, metadata)
-            );
+  /**
+   * Upload nhiều file cùng lúc
+   * @param {Array} files - Mảng file objects từ multer
+   * @param {string} folder - Thư mục lưu trữ
+   * @param {Object} options - Tùy chọn upload
+   * @returns {Promise<Object>} - Kết quả upload
+   */
+  static async uploadMultipleFiles(
+    files,
+    folder = FOLDERS.products,
+    options = {}
+  ) {
+    try {
+      const uploadPromises = files.map((file) =>
+        this.uploadFile(file, folder, options)
+      );
 
-            const results = await Promise.all(uploadPromises);
-            
-            const successful = results.filter(result => result.success);
-            const failed = results.filter(result => !result.success);
+      const results = await Promise.allSettled(uploadPromises);
 
-            return {
-                success: true,
-                data: {
-                    successful: successful.map(result => result.data),
-                    failed: failed.map(result => result.error),
-                    total: files.length,
-                    successCount: successful.length,
-                    failCount: failed.length
-                }
-            };
+      const successful = [];
+      const failed = [];
 
-        } catch (error) {
-            console.error('Lỗi khi upload nhiều file:', error);
-            return {
-                success: false,
-                error: error.message
-            };
+      results.forEach((result, index) => {
+        if (result.status === "fulfilled" && result.value.success) {
+          successful.push(result.value.data);
+        } else {
+          const errorMsg =
+            result.status === "rejected"
+              ? result.reason.message
+              : result.value.error || "Unknown error";
+          failed.push({
+            fileName: files[index].originalname,
+            error: errorMsg,
+          });
         }
+      });
+
+      return {
+        success: true,
+        data: {
+          successful,
+          failed,
+          total: files.length,
+          successCount: successful.length,
+          failCount: failed.length,
+        },
+      };
+    } catch (error) {
+      logger.error("Upload multiple files error:", error);
+      return {
+        success: false,
+        error: error.message,
+      };
     }
+  }
 
-    /**
-     * Xóa file từ S3
-     * @param {string} key - Key của file trong S3
-     * @returns {Promise<Object>} - Kết quả xóa
-     */
-    static async deleteFile(key) {
-        try {
-            const deleteParams = {
-                Bucket: BUCKET_NAME,
-                Key: key
-            };
+  /**
+   * Upload ảnh sản phẩm với transformation tự động
+   * @param {Object} file - File object từ multer
+   * @param {string} type - Loại ảnh: 'main', 'gallery', 'thumbnail', 'variant'
+   * @param {string} productId - ID sản phẩm (optional)
+   * @returns {Promise<Object>} - Kết quả upload
+   */
+  static async uploadProductImage(file, type = "main", productId = null) {
+    try {
+      let folder = FOLDERS.products;
+      let transformation = TRANSFORMATIONS.product;
 
-            await s3.deleteObject(deleteParams).promise();
+      switch (type) {
+        case "thumbnail":
+          folder = FOLDERS.thumbnails;
+          transformation = TRANSFORMATIONS.thumbnail;
+          break;
+        case "gallery":
+          transformation = TRANSFORMATIONS.gallery;
+          break;
+        case "variant":
+          folder = FOLDERS.variants;
+          transformation = TRANSFORMATIONS.variant;
+          break;
+        default:
+          transformation = TRANSFORMATIONS.product;
+      }
 
-            return {
-                success: true,
-                message: 'File đã được xóa thành công'
-            };
+      // Tạo public_id với productId nếu có
+      const publicId = productId
+        ? `${folder}/${productId}-${Date.now()}`
+        : null;
 
-        } catch (error) {
-            console.error('Lỗi khi xóa file:', error);
-            return {
-                success: false,
-                error: error.message
-            };
+      return await this.uploadFile(file, folder, {
+        transformation,
+        publicId,
+        tags: ["product", type],
+      });
+    } catch (error) {
+      logger.error("Upload product image error:", error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Xóa file từ Cloudinary
+   * @param {string} publicId - Public ID của file trong Cloudinary
+   * @param {string} resourceType - Loại resource: 'image', 'video', 'raw' (mặc định: 'image')
+   * @returns {Promise<Object>} - Kết quả xóa
+   */
+  static async deleteFile(publicId, resourceType = "image") {
+    try {
+      const result = await cloudinary.uploader.destroy(publicId, {
+        resource_type: resourceType,
+      });
+
+      if (result.result === "ok") {
+        return {
+          success: true,
+          message: "File đã được xóa thành công",
+        };
+      } else if (result.result === "not found") {
+        return {
+          success: false,
+          error: "File không tồn tại",
+        };
+      } else {
+        return {
+          success: false,
+          error: "Lỗi khi xóa file",
+        };
+      }
+    } catch (error) {
+      logger.error("Delete file error:", error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Xóa nhiều file cùng lúc
+   * @param {Array} publicIds - Mảng public IDs
+   * @param {string} resourceType - Loại resource
+   * @returns {Promise<Object>} - Kết quả xóa
+   */
+  static async deleteMultipleFiles(publicIds, resourceType = "image") {
+    try {
+      const deletePromises = publicIds.map((publicId) =>
+        this.deleteFile(publicId, resourceType)
+      );
+
+      const results = await Promise.allSettled(deletePromises);
+
+      const deleted = [];
+      const failed = [];
+
+      results.forEach((result, index) => {
+        if (result.status === "fulfilled" && result.value.success) {
+          deleted.push(publicIds[index]);
+        } else {
+          const errorMsg =
+            result.status === "rejected"
+              ? result.reason.message
+              : result.value.error || "Unknown error";
+          failed.push({
+            publicId: publicIds[index],
+            error: errorMsg,
+          });
         }
+      });
+
+      return {
+        success: true,
+        data: {
+          deleted,
+          failed,
+          total: publicIds.length,
+          deletedCount: deleted.length,
+          failCount: failed.length,
+        },
+      };
+    } catch (error) {
+      logger.error("Delete multiple files error:", error);
+      return {
+        success: false,
+        error: error.message,
+      };
     }
+  }
 
-    /**
-     * Xóa nhiều file cùng lúc
-     * @param {Array} keys - Mảng keys của files
-     * @returns {Promise<Object>} - Kết quả xóa
-     */
-    static async deleteMultipleFiles(keys) {
-        try {
-            const deleteParams = {
-                Bucket: BUCKET_NAME,
-                Delete: {
-                    Objects: keys.map(key => ({ Key: key }))
-                }
-            };
+  /**
+   * Tạo URL với transformation
+   * @param {string} publicId - Public ID của file
+   * @param {Object} transformation - Transformation options
+   * @returns {string} - URL với transformation
+   */
+  static getTransformedUrl(publicId, transformation = {}) {
+    return cloudinary.url(publicId, {
+      ...TRANSFORMATIONS.product,
+      ...transformation,
+      secure: true,
+    });
+  }
 
-            const result = await s3.deleteObjects(deleteParams).promise();
+  /**
+   * Tạo presigned upload URL để upload trực tiếp từ client (không cần server)
+   * Yêu cầu upload preset được cấu hình trên Cloudinary dashboard
+   * @param {string} folder - Thư mục lưu trữ
+   * @param {Object} options - Tùy chọn
+   * @returns {Object} - Thông tin upload (signature, timestamp, etc.)
+   */
+  static generateUploadSignature(folder = FOLDERS.products, options = {}) {
+    const { transformation = {}, tags = [], resourceType = "image" } = options;
 
-            return {
-                success: true,
-                data: {
-                    deleted: result.Deleted,
-                    errors: result.Errors || [],
-                    total: keys.length,
-                    deletedCount: result.Deleted.length
-                }
-            };
+    const params = {
+      folder,
+      tags: ["mern-fashion", ...tags].join(","),
+      transformation: JSON.stringify(transformation),
+      resource_type: resourceType,
+      timestamp: Math.round(new Date().getTime() / 1000),
+    };
 
-        } catch (error) {
-            console.error('Lỗi khi xóa nhiều file:', error);
-            return {
-                success: false,
-                error: error.message
-            };
-        }
-    }
+    const signature = cloudinary.utils.api_sign_request(
+      params,
+      process.env.CLOUDINARY_API_SECRET
+    );
 
-    /**
-     * Lấy thông tin file từ S3
-     * @param {string} key - Key của file trong S3
-     * @returns {Promise<Object>} - Thông tin file
-     */
-    static async getFileInfo(key) {
-        try {
-            const params = {
-                Bucket: BUCKET_NAME,
-                Key: key
-            };
-
-            const result = await s3.headObject(params).promise();
-
-            return {
-                success: true,
-                data: {
-                    key: key,
-                    contentType: result.ContentType,
-                    contentLength: result.ContentLength,
-                    lastModified: result.LastModified,
-                    metadata: result.Metadata,
-                    url: `https://${BUCKET_NAME}.s3.cloudfly.vn/${key}`
-                }
-            };
-
-        } catch (error) {
-            console.error('Lỗi khi lấy thông tin file:', error);
-            return {
-                success: false,
-                error: error.message
-            };
-        }
-    }
-
-    /**
-     * Tạo presigned URL để upload trực tiếp từ client
-     * @param {string} key - Key của file
-     * @param {string} contentType - Content type của file
-     * @param {number} expiresIn - Thời gian hết hạn (giây, mặc định: 300)
-     * @returns {Promise<Object>} - Presigned URL
-     */
-    static async generatePresignedUploadUrl(key, contentType, expiresIn = 300) {
-        try {
-            const params = {
-                Bucket: BUCKET_NAME,
-                Key: key,
-                Expires: expiresIn,
-                ContentType: contentType,
-                ACL: 'public-read'
-            };
-
-            const presignedUrl = s3.getSignedUrl('putObject', params);
-
-            return {
-                success: true,
-                data: {
-                    presignedUrl: presignedUrl,
-                    key: key,
-                    expiresIn: expiresIn,
-                    contentType: contentType
-                }
-            };
-
-        } catch (error) {
-            console.error('Lỗi khi tạo presigned URL:', error);
-            return {
-                success: false,
-                error: error.message
-            };
-        }
-    }
-
-    /**
-     * Tạo presigned URL để download file
-     * @param {string} key - Key của file
-     * @param {number} expiresIn - Thời gian hết hạn (giây, mặc định: 3600)
-     * @returns {Promise<Object>} - Presigned URL
-     */
-    static async generatePresignedDownloadUrl(key, expiresIn = 3600) {
-        try {
-            const params = {
-                Bucket: BUCKET_NAME,
-                Key: key,
-                Expires: expiresIn
-            };
-
-            const presignedUrl = s3.getSignedUrl('getObject', params);
-
-            return {
-                success: true,
-                data: {
-                    presignedUrl: presignedUrl,
-                    key: key,
-                    expiresIn: expiresIn
-                }
-            };
-
-        } catch (error) {
-            console.error('Lỗi khi tạo presigned download URL:', error);
-            return {
-                success: false,
-                error: error.message
-            };
-        }
-    }
-
-    /**
-     * Lấy danh sách file trong folder
-     * @param {string} prefix - Prefix của folder
-     * @param {number} maxKeys - Số lượng file tối đa (mặc định: 1000)
-     * @returns {Promise<Object>} - Danh sách file
-     */
-    static async listFiles(prefix = '', maxKeys = 1000) {
-        try {
-            const params = {
-                Bucket: BUCKET_NAME,
-                Prefix: prefix,
-                MaxKeys: maxKeys
-            };
-
-            const result = await s3.listObjectsV2(params).promise();
-
-            const files = result.Contents.map(file => ({
-                key: file.Key,
-                size: file.Size,
-                lastModified: file.LastModified,
-                url: `https://${BUCKET_NAME}.s3.cloudfly.vn/${file.Key}`
-            }));
-
-            return {
-                success: true,
-                data: {
-                    files: files,
-                    total: files.length,
-                    isTruncated: result.IsTruncated,
-                    nextContinuationToken: result.NextContinuationToken
-                }
-            };
-
-        } catch (error) {
-            console.error('Lỗi khi lấy danh sách file:', error);
-            return {
-                success: false,
-                error: error.message
-            };
-        }
-    }
+    return {
+      signature,
+      timestamp: params.timestamp,
+      folder: params.folder,
+      apiKey: process.env.CLOUDINARY_API_KEY,
+      cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+      resourceType: params.resource_type,
+    };
+  }
 }
 
 module.exports = UploadService;

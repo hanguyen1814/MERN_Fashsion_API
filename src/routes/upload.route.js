@@ -6,10 +6,8 @@ const {
   uploadProductImages,
   deleteImage,
   deleteMultipleImages,
-  getImageInfo,
-  generatePresignedUploadUrl,
-  generatePresignedDownloadUrl,
-  listImages,
+  getTransformedUrl,
+  generateUploadSignature,
 } = require("../controllers/upload.controller");
 
 const {
@@ -32,8 +30,8 @@ router.use(handleMulterError);
  */
 router.post(
   "/single",
-  authenticate(),
-  rbac(["admin", "staff"]),
+  // authenticate(),
+  // rbac(["admin", "staff"]),
   uploadSingle("image"),
   uploadSingleImage
 );
@@ -53,7 +51,7 @@ router.post(
 
 /**
  * @route   POST /api/upload/product
- * @desc    Upload product images with specific fields
+ * @desc    Upload product images with automatic transformations
  * @access  Private (Admin, Staff)
  */
 router.post(
@@ -64,16 +62,22 @@ router.post(
     { name: "mainImage", maxCount: 1 },
     { name: "galleryImages", maxCount: 9 },
     { name: "thumbnailImage", maxCount: 1 },
+    { name: "variantImages", maxCount: 10 },
   ]),
   uploadProductImages
 );
 
 /**
- * @route   DELETE /api/upload/:key
+ * @route   DELETE /api/upload/:publicId
  * @desc    Delete single image
  * @access  Private (Admin, Staff)
  */
-router.delete("/:key", authenticate(), rbac(["admin", "staff"]), deleteImage);
+router.delete(
+  "/:publicId",
+  authenticate(),
+  rbac(["admin", "staff"]),
+  deleteImage
+);
 
 /**
  * @route   DELETE /api/upload/multiple
@@ -88,46 +92,22 @@ router.delete(
 );
 
 /**
- * @route   GET /api/upload/info/:key
- * @desc    Get image information
- * @access  Private (Admin, Staff)
+ * @route   GET /api/upload/transform/:publicId
+ * @desc    Get transformed URL (resize, crop, etc.)
+ * @access  Public
  */
-router.get(
-  "/info/:key",
-  authenticate(),
-  rbac(["admin", "staff"]),
-  getImageInfo
-);
+router.get("/transform/:publicId", getTransformedUrl);
 
 /**
- * @route   POST /api/upload/presigned-upload
- * @desc    Generate presigned upload URL
+ * @route   POST /api/upload/signature
+ * @desc    Generate upload signature for client-side upload
  * @access  Private (Admin, Staff)
  */
 router.post(
-  "/presigned-upload",
+  "/signature",
   authenticate(),
   rbac(["admin", "staff"]),
-  generatePresignedUploadUrl
+  generateUploadSignature
 );
-
-/**
- * @route   POST /api/upload/presigned-download
- * @desc    Generate presigned download URL
- * @access  Private (Admin, Staff)
- */
-router.post(
-  "/presigned-download",
-  authenticate(),
-  rbac(["admin", "staff"]),
-  generatePresignedDownloadUrl
-);
-
-/**
- * @route   GET /api/upload/list
- * @desc    List images in folder
- * @access  Private (Admin, Staff)
- */
-router.get("/list", authenticate(), rbac(["admin", "staff"]), listImages);
 
 module.exports = router;

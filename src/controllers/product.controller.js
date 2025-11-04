@@ -4,14 +4,16 @@ const Brand = require("../models/brand.model");
 const Event = require("../models/event.model");
 const asyncHandler = require("../utils/asyncHandler");
 const { ok, created, fail } = require("../utils/apiResponse");
+const logger = require("../config/logger");
 
 // Helpers để chuẩn hóa dữ liệu response theo yêu cầu
 const mapVariant = (v) => {
   const price = Number(v?.price || 0);
   const originPrice = Number(v?.compareAtPrice || 0) || undefined;
+  // Tính discount theo phần trăm
   const discount =
     originPrice && originPrice > price
-      ? originPrice - price
+      ? Math.round(((originPrice - price) / originPrice) * 100)
       : Number(v?.discount || 0) || 0;
   return {
     sku: v?.sku || null,
@@ -36,9 +38,10 @@ const mapProductSummary = (p) => {
   const stockTotal = variants.reduce((acc, v) => acc + (v.stock || 0), 0);
   const minPrice = priceList.length ? Math.min(...priceList) : 0;
   const minOrigin = originList.length ? Math.min(...originList) : undefined;
+  // Tính discount theo phần trăm
   const discount =
     Number.isFinite(minOrigin) && minOrigin > minPrice
-      ? minOrigin - minPrice
+      ? Math.round(((minOrigin - minPrice) / minOrigin) * 100)
       : 0;
 
   return {
@@ -310,7 +313,6 @@ class ProductController {
   });
 
   static info = asyncHandler(async (req, res) => {
-    console.log(req.params);
     const { id } = req.params;
     const product = await Product.findOne({ _id: id });
 
@@ -922,7 +924,7 @@ class ProductController {
         },
       });
     } catch (error) {
-      console.error("Recommendation error:", error);
+      logger.error("Recommendation error:", error);
 
       // Fallback: trả về sản phẩm phổ biến
       const fallbackProducts = await Product.find({ status: "active" })

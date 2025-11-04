@@ -83,7 +83,7 @@ class PaymentController {
         return error(res, result.error || "Tạo thanh toán thất bại", 400);
       }
     } catch (err) {
-      console.error("Error creating MoMo payment:", err);
+      logger.error("Error creating MoMo payment:", err);
       return error(res, "Lỗi hệ thống", 500);
     }
   });
@@ -100,7 +100,7 @@ class PaymentController {
         payload: req.body,
       });
 
-      console.log("MoMo IPN received:", req.body);
+      logger.info("MoMo IPN received:", req.body);
 
       // Xử lý IPN từ MoMo
       const result = await PaymentService.handleMomoIPN(req.body);
@@ -140,7 +140,7 @@ class PaymentController {
           });
           await order.save();
 
-          console.log(`Order ${result.orderId} updated to PAID`);
+          logger.info(`Order ${result.orderId} updated to PAID`);
         }
       } else {
         // Xử lý thanh toán thất bại
@@ -153,14 +153,14 @@ class PaymentController {
           });
           await order.save();
 
-          console.log(`Order ${result.orderId} payment failed`);
+          logger.warn(`Order ${result.orderId} payment failed`);
         }
       }
 
       // MoMo yêu cầu trả về status 200 để xác nhận đã nhận IPN
       return res.status(200).json({ message: "OK" });
     } catch (err) {
-      console.error("Error processing MoMo webhook:", err);
+      logger.error("Error processing MoMo webhook:", err);
       return res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -188,7 +188,7 @@ class PaymentController {
         );
       }
     } catch (err) {
-      console.error("Error processing MoMo redirect:", err);
+      logger.error("Error processing MoMo redirect:", err);
       return res.redirect(`${process.env.FRONTEND_URL}/payment/error`);
     }
   });
@@ -228,7 +228,7 @@ class PaymentController {
         paymentStatus: order.payment.status,
       });
     } catch (err) {
-      console.error("Error checking MoMo payment status:", err);
+      logger.error("Error checking MoMo payment status:", err);
       return error(res, "Lỗi hệ thống", 500);
     }
   });

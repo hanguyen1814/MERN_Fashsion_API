@@ -1,4 +1,4 @@
-require("dotenv").config();
+require("dotenv").config({ quiet: true });
 const express = require("express");
 const morgan = require("morgan");
 const cors = require("cors");
@@ -12,7 +12,9 @@ const { cspMiddleware, cspReportHandler } = require("./middlewares/csp");
 const connectDB = require("./config/db");
 const logger = require("./config/logger");
 const httpLogger = require("./middlewares/httpLogger");
-const { initializeBucket } = require("./config/s3");
+const {
+  validateConfig: validateCloudinaryConfig,
+} = require("./config/cloudinary");
 const schedulerService = require("./services/scheduler.service");
 
 const app = express();
@@ -75,17 +77,24 @@ app.use(require("./middlewares/error"));
 
 connectDB(process.env.MONGO_URI)
   .then(async () => {
-    logger.info("Connected to MongoDB successfully");
-
-    // Khởi tạo S3 bucket
-    await initializeBucket();
+    // Validate Cloudinary config
+    const cloudinaryStatus = validateCloudinaryConfig()
+      ? "✓"
+      : "✗ (Upload features may not work)";
 
     // Khởi động scheduler service
     schedulerService.start();
 
     app.listen(process.env.PORT, () => {
-      logger.info(`🚀 Server running at http://localhost:${process.env.PORT}`);
-      logger.info(`Environment: ${process.env.NODE_ENV || "development"}`);
+      // Console output khi khởi động server
+      console.log("\n" + "=".repeat(50));
+      console.log("🚀 Server đã khởi động thành công");
+      console.log("=".repeat(50));
+      console.log(`📍 URL:        http://localhost:${process.env.PORT}`);
+      console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
+      console.log(`💾 MongoDB:    ✓ Connected`);
+      console.log(`☁️  Cloudinary: ${cloudinaryStatus}`);
+      console.log("=".repeat(50) + "\n");
     });
   })
   .catch((err) => {

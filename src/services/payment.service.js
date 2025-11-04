@@ -1,8 +1,9 @@
 // /service/payment.service.js
 
-require("dotenv").config();
+require("dotenv").config({ quiet: true });
 const crypto = require("crypto");
 const axios = require("axios");
+const logger = require("../config/logger");
 
 // MoMo Payment Configuration
 const MOMO_CONFIG = {
@@ -103,7 +104,7 @@ class PaymentService {
         .update(rawSignature)
         .digest("hex");
 
-      console.log(
+      logger.info(
         "MoMo Payment Request:",
         JSON.stringify(requestBody, null, 2)
       );
@@ -117,7 +118,7 @@ class PaymentService {
       });
 
       if (response.data.resultCode === 0) {
-        console.log(
+        logger.info(
           "MoMo Payment created successfully:",
           response.data.orderId
         );
@@ -135,7 +136,7 @@ class PaymentService {
         );
       }
     } catch (error) {
-      console.error("Error creating MoMo payment:", error.message);
+      logger.error("Error creating MoMo payment:", error.message);
       return {
         success: false,
         error: error.message,
@@ -215,7 +216,7 @@ class PaymentService {
         signatureVerification.providedSignature &&
         !signatureVerification.isValid
       ) {
-        console.error("Invalid MoMo signature:", {
+        logger.error("Invalid MoMo signature:", {
           provided: signatureVerification.providedSignature,
           calculated: signatureVerification.calculatedSignature,
         });
@@ -226,7 +227,7 @@ class PaymentService {
 
       // Log warning nếu không có signature (có thể là test environment)
       if (!signatureVerification.providedSignature) {
-        console.warn(
+        logger.warn(
           "MoMo IPN received without signature - proceeding anyway (test environment?)"
         );
       }
@@ -235,7 +236,7 @@ class PaymentService {
 
       // 2. Xử lý logic nghiệp vụ nếu chữ ký hợp lệ
       if (resultCode === 0) {
-        console.log(
+        logger.info(
           `Payment for order ${orderId} was successful. Amount: ${amount} VND`
         );
 
@@ -248,7 +249,7 @@ class PaymentService {
           message: message || "Payment successful",
         };
       } else {
-        console.warn(
+        logger.warn(
           `Payment for order ${orderId} failed or was cancelled. ResultCode: ${resultCode}, Message: ${message}`
         );
 
@@ -262,7 +263,7 @@ class PaymentService {
         };
       }
     } catch (error) {
-      console.error("Error processing MoMo IPN:", error.message);
+      logger.error("Error processing MoMo IPN:", error.message);
       throw error;
     }
   }
@@ -304,7 +305,7 @@ class PaymentService {
         data: response.data,
       };
     } catch (error) {
-      console.error("Error querying MoMo transaction:", error.message);
+      logger.error("Error querying MoMo transaction:", error.message);
       return {
         success: false,
         error: error.message,

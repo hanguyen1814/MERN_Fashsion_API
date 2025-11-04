@@ -1,8 +1,8 @@
 const UploadService = require("../services/upload.service");
 const asyncHandler = require("../utils/asyncHandler");
-const apiResponse = require("../utils/apiResponse");
-const path = require("path");
-const crypto = require("crypto");
+const { ok, fail } = require("../utils/apiResponse");
+const logger = require("../config/logger");
+const { FOLDERS } = require("../config/cloudinary");
 
 /**
  * Upload single image
@@ -11,28 +11,21 @@ const crypto = require("crypto");
 const uploadSingleImage = asyncHandler(async (req, res) => {
   try {
     if (!req.file) {
-      return res
-        .status(400)
-        .json(apiResponse.error("Không có file được upload!"));
+      return fail(res, 400, "Không có file được upload!");
     }
 
-    const result = await UploadService.uploadFile(req.file, "products", {
-      userId: req.user?.id,
-      uploadType: "single",
+    const result = await UploadService.uploadFile(req.file, FOLDERS.products, {
+      tags: ["user-upload", `userId-${req.user?.id || "anonymous"}`],
     });
 
     if (!result.success) {
-      return res
-        .status(500)
-        .json(apiResponse.error("Lỗi khi upload file: " + result.error));
+      return fail(res, 500, "Lỗi khi upload file: " + result.error);
     }
 
-    res
-      .status(200)
-      .json(apiResponse.success(result.data, "Upload file thành công!"));
+    return ok(res, result.data, { message: "Upload file thành công!" });
   } catch (error) {
-    console.error("Upload single image error:", error);
-    res.status(500).json(apiResponse.error("Lỗi server khi upload file"));
+    logger.error("Upload single image error:", error);
+    return fail(res, 500, "Lỗi server khi upload file");
   }
 });
 
@@ -43,110 +36,127 @@ const uploadSingleImage = asyncHandler(async (req, res) => {
 const uploadMultipleImages = asyncHandler(async (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
-      return res
-        .status(400)
-        .json(apiResponse.error("Không có file nào được upload!"));
+      return fail(res, 400, "Không có file nào được upload!");
     }
 
     const result = await UploadService.uploadMultipleFiles(
       req.files,
-      "products",
+      FOLDERS.products,
       {
-        userId: req.user?.id,
-        uploadType: "multiple",
+        tags: ["user-upload", `userId-${req.user?.id || "anonymous"}`],
       }
     );
 
     if (!result.success) {
-      return res
-        .status(500)
-        .json(apiResponse.error("Lỗi khi upload files: " + result.error));
+      return fail(res, 500, "Lỗi khi upload files: " + result.error);
     }
 
-    res
-      .status(200)
-      .json(apiResponse.success(result.data, "Upload files thành công!"));
+    return ok(res, result.data, { message: "Upload files thành công!" });
   } catch (error) {
-    console.error("Upload multiple images error:", error);
-    res.status(500).json(apiResponse.error("Lỗi server khi upload files"));
+    logger.error("Upload multiple images error:", error);
+    return fail(res, 500, "Lỗi server khi upload files");
   }
 });
 
 /**
- * Upload product images with specific fields
+ * Upload product images với transformation tự động
  * POST /api/upload/product
  */
 const uploadProductImages = asyncHandler(async (req, res) => {
   try {
     const { files } = req;
+    const { productId } = req.body;
 
     if (!files || Object.keys(files).length === 0) {
-      return res
-        .status(400)
-        .json(apiResponse.error("Không có file nào được upload!"));
+      return fail(res, 400, "Không có file nào được upload!");
     }
 
     const uploadResults = {};
     const metadata = {
       userId: req.user?.id,
       uploadType: "product",
-      productId: req.body.productId || null,
+      productId: productId || null,
     };
 
-    // Upload từng loại file
+    // Upload từng loại file với transformation phù hợp
     for (const [fieldName, fileArray] of Object.entries(files)) {
       if (fileArray && fileArray.length > 0) {
-        const result = await UploadService.uploadMultipleFiles(
-          fileArray,
-          `products/${fieldName}`,
-          { ...metadata, fieldType: fieldName }
-        );
+        const uploadPromises = fileArray.map((file) => {
+          let type = "main";
+          if (fieldName.includes("thumbnail")) type = "thumbnail";
+          else if (fieldName.includes("gallery")) type = "gallery";
+          else if (fieldName.includes("variant")) type = "variant";
 
-        uploadResults[fieldName] = result.success
-          ? result.data
-          : { error: result.error };
+          return UploadService.uploadProductImage(file, type, productId);
+        });
+
+        const results = await Promise.allSettled(uploadPromises);
+
+        const successful = [];
+        const failed = [];
+
+        results.forEach((result, index) => {
+          if (result.status === "fulfilled" && result.value.success) {
+            successful.push(result.value.data);
+          } else {
+            failed.push({
+              fileName: fileArray[index].originalname,
+              error:
+                result.status === "rejected"
+                  ? result.reason.message
+                  : result.value.error,
+            });
+          }
+        });
+
+        uploadResults[fieldName] = {
+          successful,
+          failed,
+          total: fileArray.length,
+          successCount: successful.length,
+          failCount: failed.length,
+        };
       }
     }
 
-    res
-      .status(200)
-      .json(
-        apiResponse.success(uploadResults, "Upload product images thành công!")
-      );
+    return ok(res, uploadResults, {
+      message: "Upload product images thành công!",
+    });
   } catch (error) {
-    console.error("Upload product images error:", error);
-    res
-      .status(500)
-      .json(apiResponse.error("Lỗi server khi upload product images"));
+    logger.error("Upload product images error:", error);
+    return fail(res, 500, "Lỗi server khi upload product images");
   }
 });
 
 /**
  * Delete image
- * DELETE /api/upload/:key
+ * DELETE /api/upload/:publicId
  */
 const deleteImage = asyncHandler(async (req, res) => {
   try {
-    const { key } = req.params;
+    const { publicId } = req.params;
+    const { resourceType = "image" } = req.query;
 
-    if (!key) {
-      return res
-        .status(400)
-        .json(apiResponse.error("Key của file không được để trống!"));
+    if (!publicId) {
+      return fail(res, 400, "Public ID của file không được để trống!");
     }
 
-    const result = await UploadService.deleteFile(key);
+    // Decode publicId nếu được encode trong URL
+    const decodedPublicId = decodeURIComponent(publicId);
+
+    const result = await UploadService.deleteFile(
+      decodedPublicId,
+      resourceType
+    );
 
     if (!result.success) {
-      return res
-        .status(500)
-        .json(apiResponse.error("Lỗi khi xóa file: " + result.error));
+      return fail(res, 500, "Lỗi khi xóa file: " + result.error);
     }
 
-    res.status(200).json(apiResponse.success(null, "Xóa file thành công!"));
+    return ok(res, null, { message: "Xóa file thành công!" });
   } catch (error) {
-    console.error("Delete image error:", error);
-    res.status(500).json(apiResponse.error("Lỗi server khi xóa file"));
+    logger.error("Delete image error:", error);
+    return fail(res, 500, "Lỗi server khi xóa file");
   }
 });
 
@@ -156,175 +166,90 @@ const deleteImage = asyncHandler(async (req, res) => {
  */
 const deleteMultipleImages = asyncHandler(async (req, res) => {
   try {
-    const { keys } = req.body;
+    const { publicIds } = req.body;
+    const { resourceType = "image" } = req.query;
 
-    if (!keys || !Array.isArray(keys) || keys.length === 0) {
-      return res
-        .status(400)
-        .json(apiResponse.error("Danh sách keys không hợp lệ!"));
+    if (!publicIds || !Array.isArray(publicIds) || publicIds.length === 0) {
+      return fail(res, 400, "Danh sách public IDs không hợp lệ!");
     }
 
-    const result = await UploadService.deleteMultipleFiles(keys);
-
-    if (!result.success) {
-      return res
-        .status(500)
-        .json(apiResponse.error("Lỗi khi xóa files: " + result.error));
-    }
-
-    res
-      .status(200)
-      .json(apiResponse.success(result.data, "Xóa files thành công!"));
-  } catch (error) {
-    console.error("Delete multiple images error:", error);
-    res.status(500).json(apiResponse.error("Lỗi server khi xóa files"));
-  }
-});
-
-/**
- * Get image info
- * GET /api/upload/info/:key
- */
-const getImageInfo = asyncHandler(async (req, res) => {
-  try {
-    const { key } = req.params;
-
-    if (!key) {
-      return res
-        .status(400)
-        .json(apiResponse.error("Key của file không được để trống!"));
-    }
-
-    const result = await UploadService.getFileInfo(key);
-
-    if (!result.success) {
-      return res
-        .status(404)
-        .json(apiResponse.error("Không tìm thấy file: " + result.error));
-    }
-
-    res
-      .status(200)
-      .json(apiResponse.success(result.data, "Lấy thông tin file thành công!"));
-  } catch (error) {
-    console.error("Get image info error:", error);
-    res
-      .status(500)
-      .json(apiResponse.error("Lỗi server khi lấy thông tin file"));
-  }
-});
-
-/**
- * Generate presigned upload URL
- * POST /api/upload/presigned-upload
- */
-const generatePresignedUploadUrl = asyncHandler(async (req, res) => {
-  try {
-    const { fileName, contentType, expiresIn } = req.body;
-
-    if (!fileName || !contentType) {
-      return res
-        .status(400)
-        .json(apiResponse.error("fileName và contentType là bắt buộc!"));
-    }
-
-    // Tạo key unique
-    const fileExtension = path.extname(fileName);
-    const uniqueFileName = `${crypto.randomUUID()}${fileExtension}`;
-    const key = `products/${uniqueFileName}`;
-
-    const result = await UploadService.generatePresignedUploadUrl(
-      key,
-      contentType,
-      expiresIn || 300
+    const result = await UploadService.deleteMultipleFiles(
+      publicIds,
+      resourceType
     );
 
     if (!result.success) {
-      return res
-        .status(500)
-        .json(apiResponse.error("Lỗi khi tạo presigned URL: " + result.error));
+      return fail(res, 500, "Lỗi khi xóa files: " + result.error);
     }
 
-    res
-      .status(200)
-      .json(
-        apiResponse.success(result.data, "Tạo presigned upload URL thành công!")
-      );
+    return ok(res, result.data, { message: "Xóa files thành công!" });
   } catch (error) {
-    console.error("Generate presigned upload URL error:", error);
-    res.status(500).json(apiResponse.error("Lỗi server khi tạo presigned URL"));
+    logger.error("Delete multiple images error:", error);
+    return fail(res, 500, "Lỗi server khi xóa files");
   }
 });
 
 /**
- * Generate presigned download URL
- * POST /api/upload/presigned-download
+ * Generate transformed URL (không upload, chỉ tạo URL với transformation)
+ * GET /api/upload/transform/:publicId
  */
-const generatePresignedDownloadUrl = asyncHandler(async (req, res) => {
+const getTransformedUrl = asyncHandler(async (req, res) => {
   try {
-    const { key, expiresIn } = req.body;
+    const { publicId } = req.params;
+    const { width, height, crop, quality, format } = req.query;
 
-    if (!key) {
-      return res
-        .status(400)
-        .json(apiResponse.error("Key của file là bắt buộc!"));
+    if (!publicId) {
+      return fail(res, 400, "Public ID của file không được để trống!");
     }
 
-    const result = await UploadService.generatePresignedDownloadUrl(
-      key,
-      expiresIn || 3600
+    const transformation = {};
+    if (width) transformation.width = parseInt(width);
+    if (height) transformation.height = parseInt(height);
+    if (crop) transformation.crop = crop;
+    if (quality) transformation.quality = quality;
+    if (format) transformation.format = format;
+
+    const url = UploadService.getTransformedUrl(
+      decodeURIComponent(publicId),
+      transformation
     );
 
-    if (!result.success) {
-      return res
-        .status(500)
-        .json(
-          apiResponse.error(
-            "Lỗi khi tạo presigned download URL: " + result.error
-          )
-        );
-    }
-
-    res
-      .status(200)
-      .json(
-        apiResponse.success(
-          result.data,
-          "Tạo presigned download URL thành công!"
-        )
-      );
+    return ok(
+      res,
+      { url, transformation },
+      {
+        message: "Tạo transformed URL thành công!",
+      }
+    );
   } catch (error) {
-    console.error("Generate presigned download URL error:", error);
-    res
-      .status(500)
-      .json(apiResponse.error("Lỗi server khi tạo presigned download URL"));
+    logger.error("Get transformed URL error:", error);
+    return fail(res, 500, "Lỗi server khi tạo transformed URL");
   }
 });
 
 /**
- * List images in folder
- * GET /api/upload/list
+ * Generate upload signature cho client-side upload
+ * POST /api/upload/signature
  */
-const listImages = asyncHandler(async (req, res) => {
+const generateUploadSignature = asyncHandler(async (req, res) => {
   try {
-    const { prefix = "", maxKeys = 100 } = req.query;
+    const {
+      folder = FOLDERS.products,
+      tags = [],
+      resourceType = "image",
+    } = req.body;
 
-    const result = await UploadService.listFiles(prefix, parseInt(maxKeys));
+    const signature = UploadService.generateUploadSignature(folder, {
+      tags,
+      resourceType,
+    });
 
-    if (!result.success) {
-      return res
-        .status(500)
-        .json(apiResponse.error("Lỗi khi lấy danh sách file: " + result.error));
-    }
-
-    res
-      .status(200)
-      .json(apiResponse.success(result.data, "Lấy danh sách file thành công!"));
+    return ok(res, signature, {
+      message: "Tạo upload signature thành công!",
+    });
   } catch (error) {
-    console.error("List images error:", error);
-    res
-      .status(500)
-      .json(apiResponse.error("Lỗi server khi lấy danh sách file"));
+    logger.error("Generate upload signature error:", error);
+    return fail(res, 500, "Lỗi server khi tạo upload signature");
   }
 });
 
@@ -334,8 +259,6 @@ module.exports = {
   uploadProductImages,
   deleteImage,
   deleteMultipleImages,
-  getImageInfo,
-  generatePresignedUploadUrl,
-  generatePresignedDownloadUrl,
-  listImages,
+  getTransformedUrl,
+  generateUploadSignature,
 };
