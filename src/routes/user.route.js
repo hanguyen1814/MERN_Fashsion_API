@@ -16,7 +16,7 @@ router.put(
   UserController.updateProfile
 );
 // Chuẩn hoá: PUT /api/users/:id/password (cho phép admin hoặc chính chủ)
-router.put("/:id/password", auth(), UserController.changePassword);
+router.put("/password/change", auth(), UserController.changePassword);
 router.post("/addresses/manage", auth(), UserController.manageAddresses);
 
 // Routes cho admin
