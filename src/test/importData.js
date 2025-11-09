@@ -79,7 +79,9 @@ async function findCategoryByNameOrSlug(input) {
 // Nếu chưa tồn tại thì bỏ qua (không bắt buộc)
 async function mapCategoryIds(source) {
   const ids = [];
-  const catid = source?.batch_item_for_item_card_full?.catid;
+  // Hỗ trợ cả item_basic và batch_item_for_item_card_full
+  const catid =
+    source?.item_basic?.catid || source?.batch_item_for_item_card_full?.catid;
   if (!catid) return ids;
   const catSlug = `cat-${catid}`;
   const cat = await Category.findOne({ slug: catSlug });
@@ -88,7 +90,8 @@ async function mapCategoryIds(source) {
 }
 
 function buildVariants(source) {
-  const item = source?.batch_item_for_item_card_full;
+  // Hỗ trợ cả item_basic và batch_item_for_item_card_full
+  const item = source?.item_basic || source?.batch_item_for_item_card_full;
   if (!item) return [];
 
   const baseImage = item.image
@@ -144,12 +147,18 @@ function buildVariants(source) {
     }
   }
 
-  const colorOptions =
+  let colorOptions =
     colorTierIndex !== -1 ? tiers[colorTierIndex]?.options || [] : [];
   const colorImageIds =
     colorTierIndex !== -1 ? tiers[colorTierIndex]?.images || [] : [];
-  const sizeOptions =
+  let sizeOptions =
     sizeTierIndex !== -1 ? tiers[sizeTierIndex]?.options || [] : [];
+
+  // Giới hạn số lượng: tối đa 4 màu và 3 size
+  const MAX_COLORS = 4;
+  const MAX_SIZES = 3;
+  colorOptions = colorOptions.slice(0, MAX_COLORS);
+  sizeOptions = sizeOptions.slice(0, MAX_SIZES);
 
   // Map option màu -> ảnh theo đúng index trong dữ liệu gốc
   const colorToImageUrl = new Map();
@@ -171,15 +180,15 @@ function buildVariants(source) {
     return [
       {
         sku: `${item.shopid}-${item.itemid}`,
-        color: undefined,
-        size: undefined,
+        color: "ONE COLOR",
+        size: "ONE SIZE",
         price,
         compareAtPrice: priceBefore > price ? priceBefore : undefined,
         discount: Math.max(
           0,
           Math.round(((priceBefore - price) / (priceBefore || 1)) * 100)
         ),
-        stock: Number(item.stock || 0),
+        stock: 1000,
         image: singleImageList[0],
         images: singleImageList,
         attrs: {},
@@ -191,7 +200,10 @@ function buildVariants(source) {
   const colorList = colorOptions.length ? colorOptions : [undefined];
   const sizeList = sizeOptions.length ? sizeOptions : [undefined];
   for (const c of colorList) {
-    // Chọn ảnh theo màu nếu có, fallback baseImage
+    // Chuyển màu thành chữ in hoa, nếu không có thì dùng "ONE COLOR"
+    const colorUpper = c ? String(c).toUpperCase().trim() : "ONE COLOR";
+
+    // Chọn ảnh theo màu nếu có, fallback baseImage (dùng giá trị gốc để tra Map)
     const colorImg = c ? colorToImageUrl.get(c) : undefined;
     const variantImage = colorImg || baseImage;
     const variantImages = variantImage
@@ -203,20 +215,23 @@ function buildVariants(source) {
       : [];
 
     for (const s of sizeList) {
-      const sku = `${item.shopid}-${item.itemid}-${toSlug(c || "na")}-${toSlug(
-        s || "na"
+      // Chuyển size thành chữ in hoa, nếu không có thì dùng "ONE SIZE"
+      const sizeUpper = s ? String(s).toUpperCase().trim() : "ONE SIZE";
+
+      const sku = `${item.shopid}-${item.itemid}-${toSlug(colorUpper)}-${toSlug(
+        sizeUpper
       )}`;
       variants.push({
         sku,
-        color: c,
-        size: s,
+        color: colorUpper,
+        size: sizeUpper,
         price,
         compareAtPrice: priceBefore > price ? priceBefore : undefined,
         discount: Math.max(
           0,
           Math.round(((priceBefore - price) / (priceBefore || 1)) * 100)
         ),
-        stock: Number(item.stock || 0),
+        stock: 1000,
         image: variantImages[0],
         images: variantImages,
         attrs: {},
@@ -227,7 +242,8 @@ function buildVariants(source) {
 }
 
 function buildProductDoc(source, brandId, categoryIds) {
-  const item = source?.batch_item_for_item_card_full;
+  // Hỗ trợ cả item_basic và batch_item_for_item_card_full
+  const item = source?.item_basic || source?.batch_item_for_item_card_full;
   const name = item?.name || source?.name || "Unnamed";
   const slug = toSlug(
     `${name}-${item?.itemid || source?.item_id || Date.now()}`
@@ -268,7 +284,7 @@ function buildProductDoc(source, brandId, categoryIds) {
 // Có thể dùng: ID (24 ký tự hex), name, hoặc slug
 // Để null hoặc "" nếu muốn tự động tìm/tạo từ dữ liệu
 const CUSTOM_BRAND = "68e3ed49c6629b49f95dc9a7"; // VD: "507f1f77bcf86cd799439011" (ID) hoặc "Nike" (name) hoặc "nike" (slug)
-const CUSTOM_CATEGORY = "68dbaa4ed3d896c8ed09807c"; // VD: "507f1f77bcf86cd799439011" (ID) hoặc "Áo thun" (name) hoặc "ao-thun" (slug)
+const CUSTOM_CATEGORY = "68dbaa4ed3d896c8ed09807f"; // VD: "507f1f77bcf86cd799439011" (ID) hoặc "Áo thun" (name) hoặc "ao-thun" (slug)
 // ============================================
 
 async function run() {
@@ -329,7 +345,10 @@ async function run() {
           }
         } else {
           const brandName =
-            source?.batch_item_for_item_card_full?.brand || source?.brand || "";
+            source?.item_basic?.brand ||
+            source?.batch_item_for_item_card_full?.brand ||
+            source?.brand ||
+            "";
           brandId = await ensureBrand(brandName);
         }
 

@@ -862,8 +862,8 @@ class ProductController {
       status = "active",
       sort = "createdAt",
       order = "desc",
-      min = "min_price",
-      max = "max_price",
+      min_price = "min_price",
+      max_price = "max_price",
       page = 1,
       limit = 20,
     } = req.query;
@@ -885,13 +885,13 @@ class ProductController {
 
     // Hoàn thành lọc theo khoảng giá
     // Nếu chỉ có min hoặc max, cũng lọc đúng (ví dụ min=100000, max="max" sẽ phân dải min, hoặc ngược lại)
-    if (min !== "min_price" || max !== "max_price") {
+    if (min_price !== "min_price" || max !== "max_price") {
       const priceCondition = {};
-      if (min !== "min_price") {
-        priceCondition.$gte = Number(min);
+      if (min_price !== "min_price") {
+        priceCondition.$gte = Number(min_price);
       }
-      if (max !== "max_price") {
-        priceCondition.$lte = Number(max);
+      if (max_price !== "max_price") {
+        priceCondition.$lte = Number(max_price);
       }
       filter.variants = {
         $elemMatch: {
