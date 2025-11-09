@@ -61,6 +61,8 @@ class CartController {
             stock: 0,
             image: item.image || null,
             variants: [variantEntry],
+            ratingAvg: 0,
+            ratingCount: 0,
           });
         }
         continue;
@@ -96,6 +98,8 @@ class CartController {
           stock: stockTotal,
           image: p?.image || p?.variants?.[0]?.image || null,
           variants: [],
+          ratingAvg: Number(p?.ratingAvg || 0),
+          ratingCount: Number(p?.ratingCount || 0),
         });
       }
 

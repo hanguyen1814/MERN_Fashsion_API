@@ -53,6 +53,8 @@ const mapProductSummary = (p) => {
     stock: stockTotal,
     image: p?.image || p?.variants?.[0]?.image || null,
     variants,
+    ratingAvg: Number(p?.ratingAvg || 0),
+    ratingCount: Number(p?.ratingCount || 0),
   };
 };
 
@@ -83,6 +85,8 @@ const mapProductSearchResult = (p) => {
     stock: stockTotal,
     image: p?.image || p?.variants?.[0]?.image || null,
     variants,
+    ratingAvg: Number(p?.ratingAvg || 0),
+    ratingCount: Number(p?.ratingCount || 0),
   };
 };
 
@@ -114,7 +118,7 @@ class ProductController {
       page = 1,
       limit = 20,
       tags,
-      rating,
+      minRating,
       inStock = false,
     } = req.query;
 
@@ -147,9 +151,17 @@ class ProductController {
       filter.tags = { $in: tagArray };
     }
 
-    // Rating filter
-    if (rating) {
-      filter.ratingAvg = { $gte: Number(rating) };
+    // Rating filter - hỗ trợ minRating và maxRating
+    if (minRating !== undefined && minRating !== null && minRating !== "") {
+      const minRatingValue = Number(minRating);
+      if (
+        !isNaN(minRatingValue) &&
+        minRatingValue >= 0 &&
+        minRatingValue <= 5
+      ) {
+        if (!filter.ratingAvg) filter.ratingAvg = {};
+        filter.ratingAvg.$gte = minRatingValue;
+      }
     }
 
     // Variant filters - sử dụng $elemMatch để đảm bảo tất cả điều kiện áp dụng cho cùng một variant
@@ -216,11 +228,175 @@ class ProductController {
       variantFilters.stock = { $gt: 0 };
     }
 
+    // Nếu sort theo discount, cần sử dụng aggregation pipeline để tính toán discount
+    const sortByDiscount = sort === "discount";
+
+    if (sortByDiscount) {
+      // Apply variant filters vào main filter
+      if (Object.keys(variantFilters).length > 0) {
+        filter["variants"] = { $elemMatch: variantFilters };
+      }
+
+      // Sử dụng aggregation pipeline để tính discount và sort
+      const pipeline = [
+        { $match: filter },
+        // Unwind variants để tính discount cho từng variant
+        { $unwind: "$variants" },
+        // Apply variant filters sau khi unwind (nếu có)
+        ...(Object.keys(variantFilters).length > 0
+          ? [
+              {
+                $match: {
+                  ...(variantFilters.color
+                    ? { "variants.color": variantFilters.color }
+                    : {}),
+                  ...(variantFilters.size
+                    ? { "variants.size": variantFilters.size }
+                    : {}),
+                  ...(variantFilters.price
+                    ? { "variants.price": variantFilters.price }
+                    : {}),
+                  ...(variantFilters.stock
+                    ? { "variants.stock": variantFilters.stock }
+                    : {}),
+                },
+              },
+            ]
+          : []),
+        // Tính discount percentage cho từng variant
+        {
+          $addFields: {
+            "variants.discountPercent": {
+              $cond: {
+                if: {
+                  $and: [
+                    { $ne: ["$variants.compareAtPrice", null] },
+                    { $gt: ["$variants.compareAtPrice", "$variants.price"] },
+                    { $gt: ["$variants.compareAtPrice", 0] },
+                  ],
+                },
+                then: {
+                  $multiply: [
+                    {
+                      $divide: [
+                        {
+                          $subtract: [
+                            "$variants.compareAtPrice",
+                            "$variants.price",
+                          ],
+                        },
+                        "$variants.compareAtPrice",
+                      ],
+                    },
+                    100,
+                  ],
+                },
+                else: 0,
+              },
+            },
+          },
+        },
+        // Group lại và tính max discount của product
+        {
+          $group: {
+            _id: "$_id",
+            name: { $first: "$name" },
+            slug: { $first: "$slug" },
+            description: { $first: "$description" },
+            brandId: { $first: "$brandId" },
+            categoryIds: { $first: "$categoryIds" },
+            tags: { $first: "$tags" },
+            image: { $first: "$image" },
+            images: { $first: "$images" },
+            imageKey: { $first: "$imageKey" },
+            imageKeys: { $first: "$imageKeys" },
+            thumbnailImage: { $first: "$thumbnailImage" },
+            thumbnailImageKey: { $first: "$thumbnailImageKey" },
+            status: { $first: "$status" },
+            ratingAvg: { $first: "$ratingAvg" },
+            ratingCount: { $first: "$ratingCount" },
+            salesCount: { $first: "$salesCount" },
+            createdAt: { $first: "$createdAt" },
+            updatedAt: { $first: "$updatedAt" },
+            variants: { $push: "$variants" },
+            maxDiscount: { $max: "$variants.discountPercent" },
+          },
+        },
+      ];
+
+      // Sort theo discount
+      pipeline.push({
+        $sort: {
+          maxDiscount: order === "asc" ? 1 : -1,
+          createdAt: -1,
+        },
+      });
+
+      // Pagination
+      pipeline.push({ $skip: (Number(page) - 1) * Number(limit) });
+      pipeline.push({ $limit: Number(limit) });
+
+      // Lookup brand and categories
+      pipeline.push({
+        $lookup: {
+          from: "brands",
+          localField: "brandId",
+          foreignField: "_id",
+          as: "brandId",
+          pipeline: [{ $project: { name: 1, logo: 1 } }],
+        },
+      });
+      pipeline.push({
+        $lookup: {
+          from: "categories",
+          localField: "categoryIds",
+          foreignField: "_id",
+          as: "categoryIds",
+          pipeline: [{ $project: { name: 1, slug: 1 } }],
+        },
+      });
+      pipeline.push({
+        $addFields: {
+          brandId: { $arrayElemAt: ["$brandId", 0] },
+          categoryIds: "$categoryIds",
+        },
+      });
+
+      // Count total
+      const countPipeline = [
+        { $match: filter },
+        { $group: { _id: "$_id" } },
+        { $count: "total" },
+      ];
+
+      const [results, countResult] = await Promise.all([
+        Product.aggregate(pipeline),
+        Product.aggregate(countPipeline),
+      ]);
+
+      const items = results;
+      const total = countResult[0]?.total || 0;
+
+      const data = items.map(mapProductSearchResult);
+      return res.json({
+        status: true,
+        data,
+        pagination: {
+          page: Number(page),
+          limit: Number(limit),
+          total,
+          totalPages: Math.ceil(total / Number(limit)),
+        },
+      });
+    }
+
+    // Nếu không có discount filter, sử dụng query thông thường
     if (Object.keys(variantFilters).length > 0) {
       filter["variants"] = { $elemMatch: variantFilters };
     }
 
     // Sort options - luôn ưu tiên createdAt desc làm thứ tự chính
+    // Lưu ý: sort="discount" đã được xử lý bằng aggregation pipeline ở trên
     const sortOptions = {};
     switch (sort) {
       case "price":
@@ -238,6 +414,9 @@ class ProductController {
       case "name":
         sortOptions.name = order === "asc" ? 1 : -1;
         sortOptions.createdAt = -1; // Thêm sắp xếp phụ theo thời gian tạo
+        break;
+      case "discount":
+        // Đã xử lý bằng aggregation pipeline ở trên
         break;
       default:
         // Mặc định luôn sắp xếp theo thời gian tạo mới nhất
@@ -285,6 +464,7 @@ class ProductController {
       max,
       color,
       size,
+      minRating,
       inStock = false,
       sort = "createdAt",
       order = "desc",
@@ -310,6 +490,18 @@ class ProductController {
       filter.categoryIds = Array.isArray(category)
         ? { $in: category }
         : category;
+    }
+
+    // Rating filter - chỉ hỗ trợ minRating
+    if (minRating !== undefined && minRating !== null && minRating !== "") {
+      const minRatingValue = Number(minRating);
+      if (
+        !isNaN(minRatingValue) &&
+        minRatingValue >= 0 &&
+        minRatingValue <= 5
+      ) {
+        filter.ratingAvg = { $gte: minRatingValue };
+      }
     }
 
     // Variant filters - sử dụng $elemMatch để đảm bảo tất cả điều kiện áp dụng cho cùng một variant
@@ -376,6 +568,162 @@ class ProductController {
       variantFilters.stock = { $gt: 0 };
     }
 
+    // Nếu sort theo discount, cần sử dụng aggregation pipeline để tính toán discount
+    const sortByDiscount = sort === "discount";
+
+    if (sortByDiscount) {
+      // Apply variant filters vào main filter
+      if (Object.keys(variantFilters).length > 0) {
+        filter["variants"] = { $elemMatch: variantFilters };
+      }
+
+      // Sử dụng aggregation pipeline để tính discount và sort
+      const pipeline = [
+        { $match: filter },
+        { $unwind: "$variants" },
+        ...(Object.keys(variantFilters).length > 0
+          ? [
+              {
+                $match: {
+                  ...(variantFilters.color
+                    ? { "variants.color": variantFilters.color }
+                    : {}),
+                  ...(variantFilters.size
+                    ? { "variants.size": variantFilters.size }
+                    : {}),
+                  ...(variantFilters.price
+                    ? { "variants.price": variantFilters.price }
+                    : {}),
+                  ...(variantFilters.stock
+                    ? { "variants.stock": variantFilters.stock }
+                    : {}),
+                },
+              },
+            ]
+          : []),
+        {
+          $addFields: {
+            "variants.discountPercent": {
+              $cond: {
+                if: {
+                  $and: [
+                    { $ne: ["$variants.compareAtPrice", null] },
+                    { $gt: ["$variants.compareAtPrice", "$variants.price"] },
+                    { $gt: ["$variants.compareAtPrice", 0] },
+                  ],
+                },
+                then: {
+                  $multiply: [
+                    {
+                      $divide: [
+                        {
+                          $subtract: [
+                            "$variants.compareAtPrice",
+                            "$variants.price",
+                          ],
+                        },
+                        "$variants.compareAtPrice",
+                      ],
+                    },
+                    100,
+                  ],
+                },
+                else: 0,
+              },
+            },
+          },
+        },
+        {
+          $group: {
+            _id: "$_id",
+            name: { $first: "$name" },
+            slug: { $first: "$slug" },
+            description: { $first: "$description" },
+            brandId: { $first: "$brandId" },
+            categoryIds: { $first: "$categoryIds" },
+            tags: { $first: "$tags" },
+            image: { $first: "$image" },
+            images: { $first: "$images" },
+            imageKey: { $first: "$imageKey" },
+            imageKeys: { $first: "$imageKeys" },
+            thumbnailImage: { $first: "$thumbnailImage" },
+            thumbnailImageKey: { $first: "$thumbnailImageKey" },
+            status: { $first: "$status" },
+            ratingAvg: { $first: "$ratingAvg" },
+            ratingCount: { $first: "$ratingCount" },
+            salesCount: { $first: "$salesCount" },
+            createdAt: { $first: "$createdAt" },
+            updatedAt: { $first: "$updatedAt" },
+            variants: { $push: "$variants" },
+            maxDiscount: { $max: "$variants.discountPercent" },
+          },
+        },
+      ];
+
+      // Sort theo discount
+      pipeline.push({
+        $sort: {
+          maxDiscount: order === "asc" ? 1 : -1,
+          createdAt: -1,
+        },
+      });
+
+      pipeline.push({ $skip: (Number(page) - 1) * Number(limit) });
+      pipeline.push({ $limit: Number(limit) });
+
+      pipeline.push({
+        $lookup: {
+          from: "brands",
+          localField: "brandId",
+          foreignField: "_id",
+          as: "brandId",
+          pipeline: [{ $project: { name: 1, logo: 1 } }],
+        },
+      });
+      pipeline.push({
+        $lookup: {
+          from: "categories",
+          localField: "categoryIds",
+          foreignField: "_id",
+          as: "categoryIds",
+          pipeline: [{ $project: { name: 1, slug: 1 } }],
+        },
+      });
+      pipeline.push({
+        $addFields: {
+          brandId: { $arrayElemAt: ["$brandId", 0] },
+          categoryIds: "$categoryIds",
+        },
+      });
+
+      const countPipeline = [
+        { $match: filter },
+        { $group: { _id: "$_id" } },
+        { $count: "total" },
+      ];
+
+      const [results, countResult] = await Promise.all([
+        Product.aggregate(pipeline),
+        Product.aggregate(countPipeline),
+      ]);
+
+      const items = results;
+      const total = countResult[0]?.total || 0;
+
+      const data = items.map(mapProductSearchResult);
+      return res.json({
+        status: true,
+        data,
+        pagination: {
+          page: Number(page),
+          limit: Number(limit),
+          total,
+          totalPages: Math.ceil(total / Number(limit)),
+        },
+      });
+    }
+
+    // Nếu không sort theo discount, sử dụng query thông thường
     if (Object.keys(variantFilters).length > 0) {
       filter["variants"] = { $elemMatch: variantFilters };
     }
@@ -383,15 +731,14 @@ class ProductController {
     const sortOptions = {};
     if (sort === "price") {
       sortOptions["variants.price"] = order === "asc" ? 1 : -1;
-      sortOptions.createdAt = -1; // Thêm sắp xếp phụ theo thời gian tạo
+      sortOptions.createdAt = -1;
     } else if (sort === "rating") {
       sortOptions.ratingAvg = order === "asc" ? 1 : -1;
-      sortOptions.createdAt = -1; // Thêm sắp xếp phụ theo thời gian tạo
+      sortOptions.createdAt = -1;
     } else if (sort === "name") {
       sortOptions.name = order === "asc" ? 1 : -1;
-      sortOptions.createdAt = -1; // Thêm sắp xếp phụ theo thời gian tạo
+      sortOptions.createdAt = -1;
     } else {
-      // Mặc định luôn sắp xếp theo thời gian tạo mới nhất
       sortOptions.createdAt = -1;
     }
 
@@ -400,7 +747,7 @@ class ProductController {
     const [items, total] = await Promise.all([
       Product.find(filter)
         .select(
-          "name slug image brandId categoryIds variants ratingAvg salesCount createdAt"
+          "name slug image brandId categoryIds variants ratingAvg ratingCount salesCount createdAt"
         )
         .populate("brandId", "name logo")
         .populate("categoryIds", "name slug")
@@ -531,7 +878,7 @@ class ProductController {
       color,
       size,
       tags,
-      rating,
+      minRating,
       inStock = false,
       page = 1,
       limit = 20,
@@ -568,8 +915,16 @@ class ProductController {
       matchStage.tags = { $in: tagArray };
     }
 
-    if (rating) {
-      matchStage.ratingAvg = { $gte: Number(rating) };
+    // Rating filter - chỉ hỗ trợ minRating
+    if (minRating !== undefined && minRating !== null && minRating !== "") {
+      const minRatingValue = Number(minRating);
+      if (
+        !isNaN(minRatingValue) &&
+        minRatingValue >= 0 &&
+        minRatingValue <= 5
+      ) {
+        matchStage.ratingAvg = { $gte: minRatingValue };
+      }
     }
 
     // Variant filters - sử dụng $elemMatch để đảm bảo tất cả điều kiện áp dụng cho cùng một variant
@@ -636,51 +991,279 @@ class ProductController {
       variantFilters.stock = { $gt: 0 };
     }
 
-    if (Object.keys(variantFilters).length > 0) {
-      matchStage["variants"] = { $elemMatch: variantFilters };
-    }
+    // Nếu sort theo discount, cần unwind variants để tính discount
+    const sortByDiscount = sort === "discount";
 
-    pipeline.push({ $match: matchStage });
+    if (sortByDiscount) {
+      // Apply variant filters vào matchStage
+      if (Object.keys(variantFilters).length > 0) {
+        matchStage["variants"] = { $elemMatch: variantFilters };
+      }
 
-    // Add text score for relevance sorting
-    if (q) {
-      pipeline.push({ $addFields: { score: { $meta: "textScore" } } });
-    }
+      pipeline.push({ $match: matchStage });
 
-    // Sort stage - luôn ưu tiên createdAt desc làm thứ tự chính
-    const sortStage = {};
-    switch (sort) {
-      case "relevance":
-        if (q) {
-          sortStage.score = { $meta: "textScore" };
-          sortStage.createdAt = -1; // Thêm sắp xếp phụ theo thời gian tạo
-        } else {
-          sortStage.createdAt = -1;
+      // Add text score for relevance sorting (nếu có q)
+      if (q) {
+        pipeline.push({ $addFields: { score: { $meta: "textScore" } } });
+      }
+
+      // Unwind variants để tính discount
+      pipeline.push({ $unwind: "$variants" });
+
+      // Apply variant filters sau khi unwind (nếu có)
+      if (Object.keys(variantFilters).length > 0) {
+        const variantMatchStage = {};
+        if (variantFilters.color)
+          variantMatchStage["variants.color"] = variantFilters.color;
+        if (variantFilters.size)
+          variantMatchStage["variants.size"] = variantFilters.size;
+        if (variantFilters.price)
+          variantMatchStage["variants.price"] = variantFilters.price;
+        if (variantFilters.stock)
+          variantMatchStage["variants.stock"] = variantFilters.stock;
+        if (Object.keys(variantMatchStage).length > 0) {
+          pipeline.push({ $match: variantMatchStage });
         }
-        break;
-      case "price":
-        sortStage["variants.price"] = order === "asc" ? 1 : -1;
-        sortStage.createdAt = -1; // Thêm sắp xếp phụ theo thời gian tạo
-        break;
-      case "rating":
-        sortStage.ratingAvg = order === "asc" ? 1 : -1;
-        sortStage.createdAt = -1; // Thêm sắp xếp phụ theo thời gian tạo
-        break;
-      case "sales":
-        sortStage.salesCount = order === "asc" ? 1 : -1;
-        sortStage.createdAt = -1; // Thêm sắp xếp phụ theo thời gian tạo
-        break;
-      case "name":
-        sortStage.name = order === "asc" ? 1 : -1;
-        sortStage.createdAt = -1; // Thêm sắp xếp phụ theo thời gian tạo
-        break;
-      default:
-        // Mặc định luôn sắp xếp theo thời gian tạo mới nhất
-        sortStage.createdAt = -1;
+      }
+
+      // Tính discount percentage
+      pipeline.push({
+        $addFields: {
+          "variants.discountPercent": {
+            $cond: {
+              if: {
+                $and: [
+                  { $ne: ["$variants.compareAtPrice", null] },
+                  { $gt: ["$variants.compareAtPrice", "$variants.price"] },
+                  { $gt: ["$variants.compareAtPrice", 0] },
+                ],
+              },
+              then: {
+                $multiply: [
+                  {
+                    $divide: [
+                      {
+                        $subtract: [
+                          "$variants.compareAtPrice",
+                          "$variants.price",
+                        ],
+                      },
+                      "$variants.compareAtPrice",
+                    ],
+                  },
+                  100,
+                ],
+              },
+              else: 0,
+            },
+          },
+        },
+      });
+
+      // Group lại và tính max discount của product
+      pipeline.push({
+        $group: {
+          _id: "$_id",
+          name: { $first: "$name" },
+          slug: { $first: "$slug" },
+          description: { $first: "$description" },
+          brandId: { $first: "$brandId" },
+          categoryIds: { $first: "$categoryIds" },
+          tags: { $first: "$tags" },
+          image: { $first: "$image" },
+          images: { $first: "$images" },
+          imageKey: { $first: "$imageKey" },
+          imageKeys: { $first: "$imageKeys" },
+          thumbnailImage: { $first: "$thumbnailImage" },
+          thumbnailImageKey: { $first: "$thumbnailImageKey" },
+          status: { $first: "$status" },
+          ratingAvg: { $first: "$ratingAvg" },
+          ratingCount: { $first: "$ratingCount" },
+          salesCount: { $first: "$salesCount" },
+          createdAt: { $first: "$createdAt" },
+          updatedAt: { $first: "$updatedAt" },
+          variants: { $push: "$variants" },
+          maxDiscount: { $max: "$variants.discountPercent" },
+          ...(q ? { score: { $first: "$score" } } : {}),
+        },
+      });
+    } else {
+      // Nếu không sort theo discount, sử dụng query thông thường
+      if (Object.keys(variantFilters).length > 0) {
+        matchStage["variants"] = { $elemMatch: variantFilters };
+      }
+      pipeline.push({ $match: matchStage });
+
+      // Add text score for relevance sorting
+      if (q) {
+        pipeline.push({ $addFields: { score: { $meta: "textScore" } } });
+      }
     }
-    pipeline.push({ $sort: sortStage });
+
+    // Nếu sort theo discount, đã sort trong phần trên, không cần sort lại
+    if (!sortByDiscount) {
+      // Sort stage - luôn ưu tiên createdAt desc làm thứ tự chính
+      const sortStage = {};
+      switch (sort) {
+        case "relevance":
+          if (q) {
+            sortStage.score = { $meta: "textScore" };
+            sortStage.createdAt = -1;
+          } else {
+            sortStage.createdAt = -1;
+          }
+          break;
+        case "price":
+          sortStage["variants.price"] = order === "asc" ? 1 : -1;
+          sortStage.createdAt = -1;
+          break;
+        case "rating":
+          sortStage.ratingAvg = order === "asc" ? 1 : -1;
+          sortStage.createdAt = -1;
+          break;
+        case "sales":
+          sortStage.salesCount = order === "asc" ? 1 : -1;
+          sortStage.createdAt = -1;
+          break;
+        case "name":
+          sortStage.name = order === "asc" ? 1 : -1;
+          sortStage.createdAt = -1;
+          break;
+        default:
+          sortStage.createdAt = -1;
+      }
+      pipeline.push({ $sort: sortStage });
+    } else {
+      // Đã sort theo discount ở phần trên, chỉ cần sort lại nếu cần
+      pipeline.push({
+        $sort: {
+          maxDiscount: order === "asc" ? 1 : -1,
+          createdAt: -1,
+        },
+      });
+    }
 
     // Facet stage for filters
+    if (sortByDiscount) {
+      // Khi sort theo discount, pipeline đã group và có variants array
+      // Cần lookup brands và categories, sau đó paginate
+      pipeline.push({
+        $lookup: {
+          from: "brands",
+          localField: "brandId",
+          foreignField: "_id",
+          as: "brandId",
+          pipeline: [{ $project: { name: 1, logo: 1 } }],
+        },
+      });
+      pipeline.push({
+        $lookup: {
+          from: "categories",
+          localField: "categoryIds",
+          foreignField: "_id",
+          as: "categoryIds",
+          pipeline: [{ $project: { name: 1, slug: 1 } }],
+        },
+      });
+      pipeline.push({
+        $addFields: {
+          brandId: { $arrayElemAt: ["$brandId", 0] },
+          categoryIds: "$categoryIds",
+        },
+      });
+
+      // Pagination
+      pipeline.push({ $skip: (Number(page) - 1) * Number(limit) });
+      pipeline.push({ $limit: Number(limit) });
+
+      // Count total - đếm số products sau khi filter
+      const countPipeline = [
+        { $match: filter },
+        { $group: { _id: "$_id" } },
+        { $count: "total" },
+      ];
+
+      // Facets pipeline - cần unwind variants để tính facets
+      const facetsMatchStage = { ...matchStage };
+      if (Object.keys(variantFilters).length > 0) {
+        facetsMatchStage["variants"] = { $elemMatch: variantFilters };
+      }
+      const facetsPipeline = [
+        { $match: facetsMatchStage },
+        { $unwind: "$variants" },
+        ...(Object.keys(variantFilters).length > 0
+          ? [
+              {
+                $match: {
+                  ...(variantFilters.color
+                    ? { "variants.color": variantFilters.color }
+                    : {}),
+                  ...(variantFilters.size
+                    ? { "variants.size": variantFilters.size }
+                    : {}),
+                  ...(variantFilters.price
+                    ? { "variants.price": variantFilters.price }
+                    : {}),
+                  ...(variantFilters.stock
+                    ? { "variants.stock": variantFilters.stock }
+                    : {}),
+                },
+              },
+            ]
+          : []),
+        {
+          $group: {
+            _id: null,
+            brands: { $addToSet: "$brandId" },
+            categories: { $addToSet: "$categoryIds" },
+            colors: { $addToSet: "$variants.color" },
+            sizes: { $addToSet: "$variants.size" },
+            tags: { $addToSet: "$tags" },
+            minPrice: { $min: "$variants.price" },
+            maxPrice: { $max: "$variants.price" },
+            avgRating: { $avg: "$ratingAvg" },
+            totalProducts: { $sum: 1 },
+          },
+        },
+      ];
+
+      const [results, countResult, facetsResult] = await Promise.all([
+        Product.aggregate(pipeline),
+        Product.aggregate(countPipeline),
+        Product.aggregate(facetsPipeline),
+      ]);
+
+      const products = results;
+      const total = countResult[0]?.total || 0;
+      const facets = facetsResult[0] || {};
+
+      const data = products.map(mapProductSearchResult);
+      return res.json({
+        status: true,
+        data,
+        facets: {
+          brands: facets.brands || [],
+          categories: facets.categories || [],
+          colors: facets.colors?.flat() || [],
+          sizes: facets.sizes?.flat() || [],
+          tags: facets.tags?.flat() || [],
+          priceRange: {
+            min: facets.minPrice || 0,
+            max: facets.maxPrice || 0,
+          },
+          avgRating: facets.avgRating || 0,
+          totalProducts: facets.totalProducts || 0,
+        },
+        pagination: {
+          page: Number(page),
+          limit: Number(limit),
+          total: facets.totalProducts || 0,
+          totalPages: Math.ceil((facets.totalProducts || 0) / Number(limit)),
+        },
+      });
+    }
+
+    // Nếu không sort theo discount, sử dụng facet stage như bình thường
     pipeline.push({
       $facet: {
         products: [
@@ -864,6 +1447,7 @@ class ProductController {
       order = "desc",
       min_price = "min_price",
       max_price = "max_price",
+      minRating,
       page = 1,
       limit = 20,
     } = req.query;
@@ -883,9 +1467,22 @@ class ProductController {
       filter.status = status;
     }
 
+    // Rating filter - chỉ hỗ trợ minRating
+    if (minRating !== undefined && minRating !== null && minRating !== "") {
+      const minRatingValue = Number(minRating);
+      if (
+        !isNaN(minRatingValue) &&
+        minRatingValue >= 0 &&
+        minRatingValue <= 5
+      ) {
+        filter.ratingAvg = { $gte: minRatingValue };
+      }
+    }
+
     // Hoàn thành lọc theo khoảng giá
     // Nếu chỉ có min hoặc max, cũng lọc đúng (ví dụ min=100000, max="max" sẽ phân dải min, hoặc ngược lại)
-    if (min_price !== "min_price" || max !== "max_price") {
+    const variantFilters = {};
+    if (min_price !== "min_price" || max_price !== "max_price") {
       const priceCondition = {};
       if (min_price !== "min_price") {
         priceCondition.$gte = Number(min_price);
@@ -893,11 +1490,159 @@ class ProductController {
       if (max_price !== "max_price") {
         priceCondition.$lte = Number(max_price);
       }
-      filter.variants = {
-        $elemMatch: {
-          price: priceCondition,
+      variantFilters.price = priceCondition;
+    }
+
+    // Nếu sort theo discount, cần sử dụng aggregation pipeline
+    const sortByDiscount = sort === "discount";
+
+    if (sortByDiscount) {
+      if (Object.keys(variantFilters).length > 0) {
+        filter.variants = { $elemMatch: variantFilters };
+      }
+
+      const pipeline = [
+        { $match: filter },
+        { $unwind: "$variants" },
+        ...(Object.keys(variantFilters).length > 0
+          ? [
+              {
+                $match: {
+                  ...(variantFilters.price
+                    ? { "variants.price": variantFilters.price }
+                    : {}),
+                },
+              },
+            ]
+          : []),
+        {
+          $addFields: {
+            "variants.discountPercent": {
+              $cond: {
+                if: {
+                  $and: [
+                    { $ne: ["$variants.compareAtPrice", null] },
+                    { $gt: ["$variants.compareAtPrice", "$variants.price"] },
+                    { $gt: ["$variants.compareAtPrice", 0] },
+                  ],
+                },
+                then: {
+                  $multiply: [
+                    {
+                      $divide: [
+                        {
+                          $subtract: [
+                            "$variants.compareAtPrice",
+                            "$variants.price",
+                          ],
+                        },
+                        "$variants.compareAtPrice",
+                      ],
+                    },
+                    100,
+                  ],
+                },
+                else: 0,
+              },
+            },
+          },
         },
+        {
+          $group: {
+            _id: "$_id",
+            name: { $first: "$name" },
+            slug: { $first: "$slug" },
+            description: { $first: "$description" },
+            brandId: { $first: "$brandId" },
+            categoryIds: { $first: "$categoryIds" },
+            tags: { $first: "$tags" },
+            image: { $first: "$image" },
+            images: { $first: "$images" },
+            imageKey: { $first: "$imageKey" },
+            imageKeys: { $first: "$imageKeys" },
+            thumbnailImage: { $first: "$thumbnailImage" },
+            thumbnailImageKey: { $first: "$thumbnailImageKey" },
+            status: { $first: "$status" },
+            ratingAvg: { $first: "$ratingAvg" },
+            ratingCount: { $first: "$ratingCount" },
+            salesCount: { $first: "$salesCount" },
+            createdAt: { $first: "$createdAt" },
+            updatedAt: { $first: "$updatedAt" },
+            variants: { $push: "$variants" },
+            maxDiscount: { $max: "$variants.discountPercent" },
+          },
+        },
+      ];
+
+      pipeline.push({
+        $sort: {
+          maxDiscount: order === "asc" ? 1 : -1,
+          createdAt: -1,
+        },
+      });
+
+      pipeline.push({ $skip: (Number(page) - 1) * Number(limit) });
+      pipeline.push({ $limit: Number(limit) });
+
+      pipeline.push({
+        $lookup: {
+          from: "brands",
+          localField: "brandId",
+          foreignField: "_id",
+          as: "brandId",
+          pipeline: [{ $project: { name: 1, logo: 1, slug: 1 } }],
+        },
+      });
+      pipeline.push({
+        $lookup: {
+          from: "categories",
+          localField: "categoryIds",
+          foreignField: "_id",
+          as: "categoryIds",
+          pipeline: [{ $project: { name: 1, slug: 1 } }],
+        },
+      });
+      pipeline.push({
+        $addFields: {
+          brandId: { $arrayElemAt: ["$brandId", 0] },
+          categoryIds: "$categoryIds",
+        },
+      });
+
+      const countPipeline = [
+        { $match: filter },
+        { $group: { _id: "$_id" } },
+        { $count: "total" },
+      ];
+
+      const [results, countResult] = await Promise.all([
+        Product.aggregate(pipeline),
+        Product.aggregate(countPipeline),
+      ]);
+
+      const items = results;
+      const total = countResult[0]?.total || 0;
+
+      const data = {
+        category: [mapCategory(category)].filter(Boolean),
+        products: items.map(mapProductSearchResult),
       };
+
+      return res.json({
+        status: true,
+        data,
+        pagination: {
+          page: Number(page),
+          limit: Number(limit),
+          total,
+          totalPages: Math.ceil(total / Number(limit)),
+        },
+      });
+    }
+
+    // Nếu không sort theo discount, sử dụng query thông thường
+    if (Object.keys(variantFilters).length > 0) {
+      filter.variants = { $elemMatch: variantFilters };
     }
 
     // Sort options
@@ -913,6 +1658,10 @@ class ProductController {
         break;
       case "name":
         sortOptions.name = order === "asc" ? 1 : -1;
+        sortOptions.createdAt = -1;
+        break;
+      case "price":
+        sortOptions["variants.price"] = order === "asc" ? 1 : -1;
         sortOptions.createdAt = -1;
         break;
       default:
@@ -960,6 +1709,7 @@ class ProductController {
       status = "active",
       sort = "createdAt",
       order = "desc",
+      minRating,
       page = 1,
       limit = 20,
     } = req.query;
@@ -979,6 +1729,156 @@ class ProductController {
       filter.status = status;
     }
 
+    // Rating filter - chỉ hỗ trợ minRating
+    if (minRating !== undefined && minRating !== null && minRating !== "") {
+      const minRatingValue = Number(minRating);
+      if (
+        !isNaN(minRatingValue) &&
+        minRatingValue >= 0 &&
+        minRatingValue <= 5
+      ) {
+        filter.ratingAvg = { $gte: minRatingValue };
+      }
+    }
+
+    // Nếu sort theo discount, cần sử dụng aggregation pipeline
+    const sortByDiscount = sort === "discount";
+
+    if (sortByDiscount) {
+      const pipeline = [
+        { $match: filter },
+        { $unwind: "$variants" },
+        {
+          $addFields: {
+            "variants.discountPercent": {
+              $cond: {
+                if: {
+                  $and: [
+                    { $ne: ["$variants.compareAtPrice", null] },
+                    { $gt: ["$variants.compareAtPrice", "$variants.price"] },
+                    { $gt: ["$variants.compareAtPrice", 0] },
+                  ],
+                },
+                then: {
+                  $multiply: [
+                    {
+                      $divide: [
+                        {
+                          $subtract: [
+                            "$variants.compareAtPrice",
+                            "$variants.price",
+                          ],
+                        },
+                        "$variants.compareAtPrice",
+                      ],
+                    },
+                    100,
+                  ],
+                },
+                else: 0,
+              },
+            },
+          },
+        },
+        {
+          $group: {
+            _id: "$_id",
+            name: { $first: "$name" },
+            slug: { $first: "$slug" },
+            description: { $first: "$description" },
+            brandId: { $first: "$brandId" },
+            categoryIds: { $first: "$categoryIds" },
+            tags: { $first: "$tags" },
+            image: { $first: "$image" },
+            images: { $first: "$images" },
+            imageKey: { $first: "$imageKey" },
+            imageKeys: { $first: "$imageKeys" },
+            thumbnailImage: { $first: "$thumbnailImage" },
+            thumbnailImageKey: { $first: "$thumbnailImageKey" },
+            status: { $first: "$status" },
+            ratingAvg: { $first: "$ratingAvg" },
+            ratingCount: { $first: "$ratingCount" },
+            salesCount: { $first: "$salesCount" },
+            createdAt: { $first: "$createdAt" },
+            updatedAt: { $first: "$updatedAt" },
+            variants: { $push: "$variants" },
+            maxDiscount: { $max: "$variants.discountPercent" },
+          },
+        },
+      ];
+
+      pipeline.push({
+        $sort: {
+          maxDiscount: order === "asc" ? 1 : -1,
+          createdAt: -1,
+        },
+      });
+
+      pipeline.push({ $skip: (Number(page) - 1) * Number(limit) });
+      pipeline.push({ $limit: Number(limit) });
+
+      pipeline.push({
+        $lookup: {
+          from: "brands",
+          localField: "brandId",
+          foreignField: "_id",
+          as: "brandId",
+          pipeline: [{ $project: { name: 1, logo: 1, slug: 1 } }],
+        },
+      });
+      pipeline.push({
+        $lookup: {
+          from: "categories",
+          localField: "categoryIds",
+          foreignField: "_id",
+          as: "categoryIds",
+          pipeline: [{ $project: { name: 1, slug: 1 } }],
+        },
+      });
+      pipeline.push({
+        $addFields: {
+          brandId: { $arrayElemAt: ["$brandId", 0] },
+          categoryIds: "$categoryIds",
+        },
+      });
+
+      const countPipeline = [
+        { $match: filter },
+        { $group: { _id: "$_id" } },
+        { $count: "total" },
+      ];
+
+      const [results, countResult] = await Promise.all([
+        Product.aggregate(pipeline),
+        Product.aggregate(countPipeline),
+      ]);
+
+      const items = results;
+      const total = countResult[0]?.total || 0;
+
+      const data = {
+        brand: {
+          id: String(brand._id),
+          name: brand.name,
+          slug: brand.slug,
+          logo: brand.logo,
+        },
+        products: items.map(mapProductSearchResult),
+      };
+
+      return res.json({
+        status: true,
+        data,
+        pagination: {
+          page: Number(page),
+          limit: Number(limit),
+          total,
+          totalPages: Math.ceil(total / Number(limit)),
+        },
+      });
+    }
+
+    // Nếu không sort theo discount, sử dụng query thông thường
     // Sort options
     const sortOptions = {};
     switch (sort) {
@@ -992,6 +1892,10 @@ class ProductController {
         break;
       case "name":
         sortOptions.name = order === "asc" ? 1 : -1;
+        sortOptions.createdAt = -1;
+        break;
+      case "price":
+        sortOptions["variants.price"] = order === "asc" ? 1 : -1;
         sortOptions.createdAt = -1;
         break;
       default:

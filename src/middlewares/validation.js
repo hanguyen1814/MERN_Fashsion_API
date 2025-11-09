@@ -273,6 +273,7 @@ const paginationValidation = {
         "-rating",
         "isVerifiedPurchase",
         "-isVerifiedPurchase",
+        "discount",
       ])
       .withMessage("Sắp xếp không hợp lệ"),
     handleValidationErrors,
