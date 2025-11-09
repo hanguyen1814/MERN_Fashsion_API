@@ -56,6 +56,36 @@ const mapProductSummary = (p) => {
   };
 };
 
+// Map product cho search results - trả về cả thông tin variants
+const mapProductSearchResult = (p) => {
+  const variants = Array.isArray(p?.variants) ? p.variants.map(mapVariant) : [];
+  const priceList = variants
+    .map((v) => v.price)
+    .filter((n) => Number.isFinite(n));
+  const originList = variants
+    .map((v) => v.origin_price)
+    .filter((n) => Number.isFinite(Number(n)));
+  const stockTotal = variants.reduce((acc, v) => acc + (v.stock || 0), 0);
+  const minPrice = priceList.length ? Math.min(...priceList) : 0;
+  const minOrigin = originList.length ? Math.min(...originList) : undefined;
+  // Tính discount theo phần trăm
+  const discount =
+    Number.isFinite(minOrigin) && minOrigin > minPrice
+      ? Math.round(((minOrigin - minPrice) / minOrigin) * 100)
+      : 0;
+
+  return {
+    product_id: String(p?._id || ""),
+    name: p?.name || "",
+    price: minPrice,
+    origin_price: minOrigin,
+    discount,
+    stock: stockTotal,
+    image: p?.image || p?.variants?.[0]?.image || null,
+    variants,
+  };
+};
+
 const mapCategory = (c) =>
   c
     ? {
@@ -122,20 +152,67 @@ class ProductController {
       filter.ratingAvg = { $gte: Number(rating) };
     }
 
-    // Variant filters
+    // Variant filters - sử dụng $elemMatch để đảm bảo tất cả điều kiện áp dụng cho cùng một variant
     const variantFilters = {};
+
+    // Xử lý color filter - hỗ trợ cả mảng và string (comma-separated)
     if (color) {
-      variantFilters.color = Array.isArray(color) ? { $in: color } : color;
+      if (Array.isArray(color)) {
+        const colorArray = color.filter((c) => c && c.trim() !== "");
+        if (colorArray.length > 0) {
+          variantFilters.color = { $in: colorArray };
+        }
+      } else if (typeof color === "string" && color.trim() !== "") {
+        // Hỗ trợ comma-separated values
+        const colorArray = color
+          .split(",")
+          .map((c) => c.trim())
+          .filter((c) => c !== "");
+        if (colorArray.length > 0) {
+          variantFilters.color =
+            colorArray.length === 1 ? colorArray[0] : { $in: colorArray };
+        }
+      }
     }
+
+    // Xử lý size filter - hỗ trợ cả mảng và string (comma-separated)
     if (size) {
-      variantFilters.size = Array.isArray(size) ? { $in: size } : size;
+      if (Array.isArray(size)) {
+        const sizeArray = size.filter((s) => s && s.trim() !== "");
+        if (sizeArray.length > 0) {
+          variantFilters.size = { $in: sizeArray };
+        }
+      } else if (typeof size === "string" && size.trim() !== "") {
+        // Hỗ trợ comma-separated values
+        const sizeArray = size
+          .split(",")
+          .map((s) => s.trim())
+          .filter((s) => s !== "");
+        if (sizeArray.length > 0) {
+          variantFilters.size =
+            sizeArray.length === 1 ? sizeArray[0] : { $in: sizeArray };
+        }
+      }
     }
-    if (min || max) {
-      variantFilters.price = {};
-      if (min) variantFilters.price.$gte = Number(min);
-      if (max) variantFilters.price.$lte = Number(max);
+
+    // Xử lý price filter
+    if (min !== undefined && min !== null && min !== "") {
+      const minPrice = Number(min);
+      if (!isNaN(minPrice) && minPrice >= 0) {
+        if (!variantFilters.price) variantFilters.price = {};
+        variantFilters.price.$gte = minPrice;
+      }
     }
-    if (inStock === "true") {
+    if (max !== undefined && max !== null && max !== "") {
+      const maxPrice = Number(max);
+      if (!isNaN(maxPrice) && maxPrice >= 0) {
+        if (!variantFilters.price) variantFilters.price = {};
+        variantFilters.price.$lte = maxPrice;
+      }
+    }
+
+    // Xử lý stock filter
+    if (inStock === "true" || inStock === true) {
       variantFilters.stock = { $gt: 0 };
     }
 
@@ -182,7 +259,7 @@ class ProductController {
       Product.countDocuments(filter),
     ]);
 
-    const data = items.map(mapProductSummary);
+    const data = items.map(mapProductSearchResult);
     return res.json({
       status: true,
       data,
@@ -197,7 +274,7 @@ class ProductController {
 
   /**
    * Tìm kiếm đơn giản: nhanh, dễ hiểu
-   * Hỗ trợ: q (tên), brand, category, min/max price, inStock, sort cơ bản
+   * Hỗ trợ: q (tên), brand, category, min/max price, color, size, inStock, sort cơ bản
    */
   static simpleSearch = asyncHandler(async (req, res) => {
     const {
@@ -206,6 +283,8 @@ class ProductController {
       category,
       min,
       max,
+      color,
+      size,
       inStock = false,
       sort = "createdAt",
       order = "desc",
@@ -233,14 +312,72 @@ class ProductController {
         : category;
     }
 
-    if (min || max) {
-      filter["variants.price"] = {};
-      if (min) filter["variants.price"].$gte = Number(min);
-      if (max) filter["variants.price"].$lte = Number(max);
+    // Variant filters - sử dụng $elemMatch để đảm bảo tất cả điều kiện áp dụng cho cùng một variant
+    const variantFilters = {};
+
+    // Xử lý color filter - hỗ trợ cả mảng và string (comma-separated)
+    if (color) {
+      if (Array.isArray(color)) {
+        const colorArray = color.filter((c) => c && c.trim() !== "");
+        if (colorArray.length > 0) {
+          variantFilters.color = { $in: colorArray };
+        }
+      } else if (typeof color === "string" && color.trim() !== "") {
+        // Hỗ trợ comma-separated values
+        const colorArray = color
+          .split(",")
+          .map((c) => c.trim())
+          .filter((c) => c !== "");
+        if (colorArray.length > 0) {
+          variantFilters.color =
+            colorArray.length === 1 ? colorArray[0] : { $in: colorArray };
+        }
+      }
     }
 
-    if (inStock === "true") {
-      filter["variants.stock"] = { $gt: 0 };
+    // Xử lý size filter - hỗ trợ cả mảng và string (comma-separated)
+    if (size) {
+      if (Array.isArray(size)) {
+        const sizeArray = size.filter((s) => s && s.trim() !== "");
+        if (sizeArray.length > 0) {
+          variantFilters.size = { $in: sizeArray };
+        }
+      } else if (typeof size === "string" && size.trim() !== "") {
+        // Hỗ trợ comma-separated values
+        const sizeArray = size
+          .split(",")
+          .map((s) => s.trim())
+          .filter((s) => s !== "");
+        if (sizeArray.length > 0) {
+          variantFilters.size =
+            sizeArray.length === 1 ? sizeArray[0] : { $in: sizeArray };
+        }
+      }
+    }
+
+    // Xử lý price filter
+    if (min !== undefined && min !== null && min !== "") {
+      const minPrice = Number(min);
+      if (!isNaN(minPrice) && minPrice >= 0) {
+        if (!variantFilters.price) variantFilters.price = {};
+        variantFilters.price.$gte = minPrice;
+      }
+    }
+    if (max !== undefined && max !== null && max !== "") {
+      const maxPrice = Number(max);
+      if (!isNaN(maxPrice) && maxPrice >= 0) {
+        if (!variantFilters.price) variantFilters.price = {};
+        variantFilters.price.$lte = maxPrice;
+      }
+    }
+
+    // Xử lý stock filter
+    if (inStock === "true" || inStock === true) {
+      variantFilters.stock = { $gt: 0 };
+    }
+
+    if (Object.keys(variantFilters).length > 0) {
+      filter["variants"] = { $elemMatch: variantFilters };
     }
 
     const sortOptions = {};
@@ -274,7 +411,7 @@ class ProductController {
       Product.countDocuments(filter),
     ]);
 
-    const data = items.map(mapProductSummary);
+    const data = items.map(mapProductSearchResult);
     return res.json({
       status: true,
       data,
@@ -435,20 +572,67 @@ class ProductController {
       matchStage.ratingAvg = { $gte: Number(rating) };
     }
 
-    // Variant filters
+    // Variant filters - sử dụng $elemMatch để đảm bảo tất cả điều kiện áp dụng cho cùng một variant
     const variantFilters = {};
+
+    // Xử lý color filter - hỗ trợ cả mảng và string (comma-separated)
     if (color) {
-      variantFilters.color = Array.isArray(color) ? { $in: color } : color;
+      if (Array.isArray(color)) {
+        const colorArray = color.filter((c) => c && c.trim() !== "");
+        if (colorArray.length > 0) {
+          variantFilters.color = { $in: colorArray };
+        }
+      } else if (typeof color === "string" && color.trim() !== "") {
+        // Hỗ trợ comma-separated values
+        const colorArray = color
+          .split(",")
+          .map((c) => c.trim())
+          .filter((c) => c !== "");
+        if (colorArray.length > 0) {
+          variantFilters.color =
+            colorArray.length === 1 ? colorArray[0] : { $in: colorArray };
+        }
+      }
     }
+
+    // Xử lý size filter - hỗ trợ cả mảng và string (comma-separated)
     if (size) {
-      variantFilters.size = Array.isArray(size) ? { $in: size } : size;
+      if (Array.isArray(size)) {
+        const sizeArray = size.filter((s) => s && s.trim() !== "");
+        if (sizeArray.length > 0) {
+          variantFilters.size = { $in: sizeArray };
+        }
+      } else if (typeof size === "string" && size.trim() !== "") {
+        // Hỗ trợ comma-separated values
+        const sizeArray = size
+          .split(",")
+          .map((s) => s.trim())
+          .filter((s) => s !== "");
+        if (sizeArray.length > 0) {
+          variantFilters.size =
+            sizeArray.length === 1 ? sizeArray[0] : { $in: sizeArray };
+        }
+      }
     }
-    if (min || max) {
-      variantFilters.price = {};
-      if (min) variantFilters.price.$gte = Number(min);
-      if (max) variantFilters.price.$lte = Number(max);
+
+    // Xử lý price filter
+    if (min !== undefined && min !== null && min !== "") {
+      const minPrice = Number(min);
+      if (!isNaN(minPrice) && minPrice >= 0) {
+        if (!variantFilters.price) variantFilters.price = {};
+        variantFilters.price.$gte = minPrice;
+      }
     }
-    if (inStock === "true") {
+    if (max !== undefined && max !== null && max !== "") {
+      const maxPrice = Number(max);
+      if (!isNaN(maxPrice) && maxPrice >= 0) {
+        if (!variantFilters.price) variantFilters.price = {};
+        variantFilters.price.$lte = maxPrice;
+      }
+    }
+
+    // Xử lý stock filter
+    if (inStock === "true" || inStock === true) {
       variantFilters.stock = { $gt: 0 };
     }
 
@@ -544,7 +728,7 @@ class ProductController {
     const products = result[0]?.products || [];
     const facets = result[0]?.facets[0] || {};
 
-    const data = products.map(mapProductSummary);
+    const data = products.map(mapProductSearchResult);
     return res.json({
       status: true,
       data,
@@ -631,7 +815,7 @@ class ProductController {
       .limit(Number(limit))
       .lean();
 
-    const data = relatedProducts.map(mapProductSummary);
+    const data = relatedProducts.map(mapProductSearchResult);
     return res.json({ status: true, data });
   });
 
@@ -678,6 +862,8 @@ class ProductController {
       status = "active",
       sort = "createdAt",
       order = "desc",
+      min = "min",
+      max = "max",
       page = 1,
       limit = 20,
     } = req.query;
@@ -695,6 +881,23 @@ class ProductController {
 
     if (status !== "all") {
       filter.status = status;
+    }
+
+    // Hoàn thành lọc theo khoảng giá
+    // Nếu chỉ có min hoặc max, cũng lọc đúng (ví dụ min=100000, max="max" sẽ phân dải min, hoặc ngược lại)
+    if (min !== "min" || max !== "max") {
+      const priceCondition = {};
+      if (min !== "min") {
+        priceCondition.$gte = Number(min);
+      }
+      if (max !== "max") {
+        priceCondition.$lte = Number(max);
+      }
+      filter.variants = {
+        $elemMatch: {
+          price: priceCondition,
+        },
+      };
     }
 
     // Sort options
@@ -733,7 +936,7 @@ class ProductController {
 
     const data = {
       category: [mapCategory(category)].filter(Boolean),
-      products: items.map(mapProductSummary),
+      products: items.map(mapProductSearchResult),
     };
 
     return res.json({
@@ -817,7 +1020,7 @@ class ProductController {
         slug: brand.slug,
         logo: brand.logo,
       },
-      products: items.map(mapProductSummary),
+      products: items.map(mapProductSearchResult),
     };
 
     return res.json({
@@ -863,7 +1066,7 @@ class ProductController {
           .populate("categoryIds", "name slug")
           .lean();
 
-        const data = popularProducts.map(mapProductSummary);
+        const data = popularProducts.map(mapProductSearchResult);
         return res.json({
           status: true,
           data,
@@ -908,7 +1111,7 @@ class ProductController {
           );
       }
 
-      const data = recommendedProducts.map(mapProductSummary);
+      const data = recommendedProducts.map(mapProductSearchResult);
 
       return res.json({
         status: true,
@@ -934,7 +1137,7 @@ class ProductController {
         .populate("categoryIds", "name slug")
         .lean();
 
-      const data = fallbackProducts.map(mapProductSummary);
+      const data = fallbackProducts.map(mapProductSearchResult);
       return res.json({
         status: true,
         data,
