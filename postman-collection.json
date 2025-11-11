@@ -317,7 +317,35 @@
                     "response": []
                 },
                 {
-                    "name": "Manage Address - Add",
+                    "name": "Get Addresses",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/users/addresses",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "users",
+                                "addresses"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Add Address",
                     "request": {
                         "auth": {
                             "type": "bearer",
@@ -338,17 +366,113 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n  \"action\": \"add\",\n  \"address\": {\n    \"fullName\": \"Nguyễn Văn A\",\n    \"phone\": \"0123456789\",\n    \"street\": \"123 Đường ABC\",\n    \"ward\": \"Phường XYZ\",\n    \"district\": \"Quận 1\",\n    \"province\": \"TP.HCM\",\n    \"isDefault\": false\n  }\n}"
+                            "raw": "{\n  \"fullName\": \"Nguyễn Văn A\",\n  \"phone\": \"0123456789\",\n  \"street\": \"123 Đường ABC\",\n  \"ward\": \"Phường XYZ\",\n  \"district\": \"Quận 1\",\n  \"province\": \"TP.HCM\",\n  \"isDefault\": false\n}"
                         },
                         "url": {
-                            "raw": "{{baseUrl}}/users/addresses/manage",
+                            "raw": "{{baseUrl}}/users/addresses",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "users",
+                                "addresses"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Update Address",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"fullName\": \"Nguyễn Văn B\",\n  \"phone\": \"0987654321\",\n  \"street\": \"456 Đường DEF\",\n  \"ward\": \"Phường UVW\",\n  \"district\": \"Quận 2\",\n  \"province\": \"TP.HCM\",\n  \"isDefault\": true\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/users/addresses/64f1a2b3c4d5e6f7a8b9c0d1",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "users",
                                 "addresses",
-                                "manage"
+                                "64f1a2b3c4d5e6f7a8b9c0d1"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Delete Address",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "DELETE",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/users/addresses/64f1a2b3c4d5e6f7a8b9c0d1",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "users",
+                                "addresses",
+                                "64f1a2b3c4d5e6f7a8b9c0d1"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Set Default Address",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "PATCH",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/users/addresses/64f1a2b3c4d5e6f7a8b9c0d1/default",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "users",
+                                "addresses",
+                                "64f1a2b3c4d5e6f7a8b9c0d1",
+                                "default"
                             ]
                         }
                     },
@@ -593,6 +717,40 @@
                                 {
                                     "key": "limit",
                                     "value": "8"
+                                }
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Get Product Recommendations",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/products/recommendations?limit=10",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "products",
+                                "recommendations"
+                            ],
+                            "query": [
+                                {
+                                    "key": "limit",
+                                    "value": "10"
                                 }
                             ]
                         }
@@ -1680,6 +1838,115 @@
                         }
                     },
                     "response": []
+                },
+                {
+                    "name": "Reply to Review",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"content\": \"Cảm ơn bạn đã đánh giá sản phẩm!\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/reviews/64f1a2b3c4d5e6f7a8b9c0d9/reply",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "reviews",
+                                "64f1a2b3c4d5e6f7a8b9c0d9",
+                                "reply"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Get All Reviews (Admin)",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/reviews/admin?page=1&limit=10&sort=-createdAt",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "reviews",
+                                "admin"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "10"
+                                },
+                                {
+                                    "key": "sort",
+                                    "value": "-createdAt"
+                                }
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Delete Review (Admin)",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "DELETE",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/reviews/admin/64f1a2b3c4d5e6f7a8b9c0d9",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "reviews",
+                                "admin",
+                                "64f1a2b3c4d5e6f7a8b9c0d9"
+                            ]
+                        }
+                    },
+                    "response": []
                 }
             ]
         },
@@ -1745,6 +2012,34 @@
                             "path": [
                                 "wishlist",
                                 "toggle"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Delete Wishlist Item",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "DELETE",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/wishlist/64f1a2b3c4d5e6f7a8b9c0d1",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "wishlist",
+                                "64f1a2b3c4d5e6f7a8b9c0d1"
                             ]
                         }
                     },
@@ -2155,6 +2450,401 @@
                             "path": [
                                 "upload",
                                 "signature"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Upload Avatar",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [],
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "avatar",
+                                    "type": "file",
+                                    "src": []
+                                }
+                            ]
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/upload/avatar",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "upload",
+                                "avatar"
+                            ]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "Telegram (Admin Only)",
+            "item": [
+                {
+                    "name": "Test Telegram Connection",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/telegram/test",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "telegram",
+                                "test"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Send Test Message",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"message\": \"This is a test message\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/telegram/test-message",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "telegram",
+                                "test-message"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Send Test Security Alert",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"type\": \"Test Security Alert\",\n  \"severity\": \"medium\",\n  \"message\": \"This is a test security alert\",\n  \"details\": \"Test details for security alert\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/telegram/test-security-alert",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "telegram",
+                                "test-security-alert"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Analyze Logs",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"hours\": 1\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/telegram/analyze-logs",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "telegram",
+                                "analyze-logs"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Send Daily Report",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/telegram/daily-report",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "telegram",
+                                "daily-report"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Get Scheduler Status",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/telegram/scheduler/status",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "telegram",
+                                "scheduler",
+                                "status"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Start Scheduler",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/telegram/scheduler/start",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "telegram",
+                                "scheduler",
+                                "start"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Stop Scheduler",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/telegram/scheduler/stop",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "telegram",
+                                "scheduler",
+                                "stop"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Stop Job",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "DELETE",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/telegram/scheduler/jobs/daily-report",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "telegram",
+                                "scheduler",
+                                "jobs",
+                                "daily-report"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Restart Job",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/telegram/scheduler/jobs/daily-report/restart",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "telegram",
+                                "scheduler",
+                                "jobs",
+                                "daily-report",
+                                "restart"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Send System Alert",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"type\": \"System Maintenance\",\n  \"message\": \"System will be under maintenance\",\n  \"details\": \"Maintenance scheduled from 2:00 AM to 4:00 AM\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/telegram/system-alert",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "telegram",
+                                "system-alert"
                             ]
                         }
                     },

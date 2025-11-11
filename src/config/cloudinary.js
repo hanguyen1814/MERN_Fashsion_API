@@ -74,6 +74,7 @@ const FOLDERS = {
   thumbnails: "products/thumbnails",
   reviews: "reviews",
   users: "users",
+  avatars: "users/avatars",
 };
 
 // Transformations mặc định cho các loại ảnh
@@ -103,6 +104,14 @@ const TRANSFORMATIONS = {
     width: 600,
     height: 600,
     crop: "limit",
+    quality: "auto",
+    format: "auto",
+  },
+  avatar: {
+    width: 400,
+    height: 400,
+    crop: "fill",
+    gravity: "face",
     quality: "auto",
     format: "auto",
   },

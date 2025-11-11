@@ -188,6 +188,63 @@ class WishlistController {
       updatedAt: wishlist.updatedAt,
     });
   });
+
+  /**
+   * Xóa sản phẩm khỏi wishlist
+   */
+  static remove = asyncHandler(async (req, res) => {
+    const { productId } = req.params;
+    const userId = req.user.id;
+
+    if (!productId) {
+      return res.status(400).json({
+        status: false,
+        message: "Thiếu productId",
+      });
+    }
+
+    // Tìm wishlist của user
+    const wishlist = await Wishlist.findOne({ userId });
+    if (!wishlist) {
+      return ok(res, {
+        userId,
+        products: [],
+        removed: false,
+      });
+    }
+
+    const initialLength = wishlist.productIds.length;
+    wishlist.productIds = wishlist.productIds.filter(
+      (id) => id.toString() !== productId
+    );
+
+    const removed = wishlist.productIds.length < initialLength;
+
+    if (removed) {
+      await wishlist.save();
+    }
+
+    await wishlist.populate({
+      path: "productIds",
+      select: "-__v",
+      populate: [
+        { path: "brandId", select: "name logo" },
+        { path: "categoryIds", select: "name slug" },
+      ],
+    });
+
+    const products = Array.isArray(wishlist.productIds)
+      ? wishlist.productIds.filter((p) => p !== null).map(mapProductFull)
+      : [];
+
+    return ok(res, {
+      userId: wishlist.userId,
+      products,
+      removed,
+      createdAt: wishlist.createdAt,
+      updatedAt: wishlist.updatedAt,
+    });
+  });
 }
 
 module.exports = WishlistController;

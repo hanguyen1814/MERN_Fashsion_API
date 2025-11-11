@@ -3,15 +3,15 @@ const mongoose = require("mongoose");
 const bcrypt = require("bcrypt");
 const AddressSchema = new mongoose.Schema(
   {
-    fullName: String,
-    phone: String,
-    street: String,
-    ward: String,
-    district: String,
-    province: String,
+    fullName: { type: String, required: true, trim: true },
+    phone: { type: String, required: true },
+    street: { type: String, required: true, trim: true },
+    ward: { type: String, required: true, trim: true },
+    district: { type: String, required: true, trim: true },
+    province: { type: String, required: true, trim: true },
     isDefault: { type: Boolean, default: false },
   },
-  { _id: false }
+  { _id: true, timestamps: false }
 );
 
 const UserSchema = new mongoose.Schema(

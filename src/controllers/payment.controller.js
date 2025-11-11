@@ -30,6 +30,24 @@ class PaymentController {
         return error(res, "Đơn hàng không tồn tại", 404);
       }
 
+      // Bắt buộc phương thức thanh toán là MoMo
+      if (order.payment?.method !== "momo") {
+        logger.warn(
+          `Payment creation blocked - Method is not MoMo for order: ${orderId}`,
+          {
+            orderId,
+            userId: req.user?.id,
+            ip: req.ip,
+            method: order.payment?.method,
+          }
+        );
+        return error(
+          res,
+          "Phương thức thanh toán của đơn hàng không hợp lệ",
+          400
+        );
+      }
+
       // Kiểm tra trạng thái đơn hàng
       if (order.status !== "pending") {
         return error(res, "Đơn hàng đã được xử lý", 400);

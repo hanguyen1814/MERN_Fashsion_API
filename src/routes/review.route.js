@@ -6,6 +6,7 @@ const {
   paginationValidation,
 } = require("../middlewares/validation");
 const { uploadMultiple, handleMulterError } = require("../middlewares/upload");
+const { requireAdmin } = require("../middlewares/rbac");
 const rateLimit = require("express-rate-limit");
 
 // Rate limiter riêng cho review write actions
@@ -16,6 +17,7 @@ const reviewWriteLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Public routes
 router.get(
   "/product/:productId",
   reviewValidation.productIdParam,
@@ -27,6 +29,24 @@ router.get(
   reviewValidation.productIdParam,
   ReviewController.summaryByProduct
 );
+
+// Admin routes - đặt trước routes có params để tránh conflict
+router.get(
+  "/admin",
+  auth(),
+  requireAdmin,
+  paginationValidation.query,
+  ReviewController.listAdmin
+);
+router.delete(
+  "/admin/:id",
+  auth(),
+  requireAdmin,
+  reviewValidation.reviewIdParam,
+  ReviewController.removeAdmin
+);
+
+// User routes
 router.post(
   "/",
   auth(),
@@ -36,6 +56,17 @@ router.post(
   reviewValidation.create,
   ReviewController.create
 );
+
+// Reply endpoint - cho phép admin và user thường reply (đặt trước /:id)
+router.post(
+  "/:id/reply",
+  auth(),
+  reviewWriteLimiter,
+  reviewValidation.reviewIdParam,
+  reviewValidation.reply,
+  ReviewController.reply
+);
+
 router.put(
   "/:id",
   auth(),

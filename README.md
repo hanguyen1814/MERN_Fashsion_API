@@ -326,66 +326,119 @@ PUT /users/password/change
 
 ### 2.5 Quản lý địa chỉ
 
+#### 2.5.1 Lấy danh sách địa chỉ
+
 ```http
-POST /users/addresses/manage
+GET /users/addresses
 ```
 
 **Headers:** `Authorization: Bearer <token>`
 
-**Body - Thêm địa chỉ:**
+**Response Success (200):**
 
 ```json
 {
-  "action": "add",
-  "address": {
-    "fullName": "Nguyễn Văn A",
-    "phone": "0123456789",
-    "street": "123 Đường ABC",
-    "ward": "Phường XYZ",
-    "district": "Quận 1",
-    "province": "TP.HCM",
-    "isDefault": false
+  "status": true,
+  "data": {
+    "addresses": [
+      {
+        "_id": "64f1a2b3c4d5e6f7a8b9c0d1",
+        "fullName": "Nguyễn Văn A",
+        "phone": "0123456789",
+        "street": "123 Đường ABC",
+        "ward": "Phường XYZ",
+        "district": "Quận 1",
+        "province": "TP.HCM",
+        "isDefault": true
+      }
+    ]
   }
 }
 ```
 
-**Body - Cập nhật địa chỉ:**
+#### 2.5.2 Thêm địa chỉ
+
+```http
+POST /users/addresses
+```
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Body:**
 
 ```json
 {
-  "action": "update",
-  "addressId": "64f1a2b3c4d5e6f7a8b9c0d1",
-  "address": {
-    "fullName": "Nguyễn Văn B",
-    "phone": "0987654321",
-    "street": "456 Đường DEF",
-    "ward": "Phường UVW",
-    "district": "Quận 2",
-    "province": "TP.HCM",
-    "isDefault": true
+  "fullName": "Nguyễn Văn A",
+  "phone": "0123456789",
+  "street": "123 Đường ABC",
+  "ward": "Phường XYZ",
+  "district": "Quận 1",
+  "province": "TP.HCM",
+  "isDefault": false
+}
+```
+
+#### 2.5.3 Cập nhật địa chỉ
+
+```http
+PUT /users/addresses/:id
+```
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Body:**
+
+```json
+{
+  "fullName": "Nguyễn Văn B",
+  "phone": "0987654321",
+  "street": "456 Đường DEF",
+  "ward": "Phường UVW",
+  "district": "Quận 2",
+  "province": "TP.HCM",
+  "isDefault": true
+}
+```
+
+#### 2.5.4 Xóa địa chỉ
+
+```http
+DELETE /users/addresses/:id
+```
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Response Success (200):**
+
+```json
+{
+  "status": true,
+  "data": {
+    "message": "Xóa địa chỉ thành công"
   }
 }
 ```
 
-**Body - Xóa địa chỉ:**
+#### 2.5.5 Đặt địa chỉ mặc định
+
+```http
+PATCH /users/addresses/:id/default
+```
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Response Success (200):**
 
 ```json
 {
-  "action": "delete",
-  "addressId": "64f1a2b3c4d5e6f7a8b9c0d1"
+  "status": true,
+  "data": {
+    "message": "Đặt địa chỉ mặc định thành công"
+  }
 }
 ```
 
-**Body - Đặt địa chỉ mặc định:**
-
-```json
-{
-  "action": "set_default",
-  "addressId": "64f1a2b3c4d5e6f7a8b9c0d1"
-}
-```
-
-### 2.6 Lấy thông tin user theo ID (Admin)
+### 2.6 Lấy thông tin user theo ID
 
 ```http
 GET /users/:id
@@ -646,7 +699,42 @@ GET /products/id/:id
 GET /products/related?slug=ao-thun-nam&limit=8
 ```
 
-### 3.8 Lấy thống kê sản phẩm
+### 3.8 Lấy sản phẩm gợi ý (Recommendations)
+
+```http
+GET /products/recommendations
+```
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Query Parameters:**
+
+- `limit`: Số lượng sản phẩm gợi ý (default: 10)
+
+**Response Success (200):**
+
+```json
+{
+  "status": true,
+  "data": [
+    {
+      "product_id": "64f1a2b3c4d5e6f7a8b9c0d1",
+      "name": "Áo thun nam",
+      "price": 250000,
+      "origin_price": 300000,
+      "discount": 50000,
+      "stock": 100,
+      "image": "https://example.com/product.jpg",
+      "ratingAvg": 4.5,
+      "ratingCount": 120
+    }
+  ]
+}
+```
+
+**Note:** Endpoint này sử dụng hệ thống recommendation dựa trên lịch sử mua hàng và hành vi người dùng.
+
+### 3.9 Lấy thống kê sản phẩm
 
 ```http
 GET /products/stats
@@ -685,19 +773,19 @@ GET /products/stats
 }
 ```
 
-### 3.9 Lấy sản phẩm theo category slug
+### 3.10 Lấy sản phẩm theo category slug
 
 ```http
 GET /products/category/:slug?page=1&limit=20&sort=rating&order=desc
 ```
 
-### 3.10 Lấy sản phẩm theo brand slug
+### 3.11 Lấy sản phẩm theo brand slug
 
 ```http
 GET /products/brand/:slug?page=1&limit=20&sort=sales&order=desc
 ```
 
-### 3.11 Tạo sản phẩm mới (Admin/Staff)
+### 3.12 Tạo sản phẩm mới (Admin/Staff)
 
 ```http
 POST /products
@@ -756,7 +844,7 @@ POST /products
 }
 ```
 
-### 3.12 Cập nhật sản phẩm (Admin/Staff)
+### 3.13 Cập nhật sản phẩm (Admin/Staff)
 
 ```http
 PUT /products/:id
@@ -766,7 +854,7 @@ PUT /products/:id
 
 **Body:** Tương tự như tạo sản phẩm
 
-### 3.13 Xóa sản phẩm (Admin/Staff)
+### 3.14 Xóa sản phẩm (Admin/Staff)
 
 ```http
 DELETE /products/:id
@@ -1544,6 +1632,7 @@ POST /reviews
 **Headers:** `Authorization: Bearer <token>`
 
 Hỗ trợ 2 cách gửi ảnh:
+
 - Gửi mảng URL trong body JSON: `images: string[]` (tối đa 5)
 - Hoặc dùng `multipart/form-data` với field `images` (tối đa 5 file, 10MB/file)
 
@@ -1587,13 +1676,96 @@ PUT /reviews/:id
 
 Hỗ trợ JSON và `multipart/form-data` như phần tạo. Chỉ chủ sở hữu review hoặc staff/admin mới được phép.
 
-### 9.5 Xóa đánh giá
+### 9.6 Xóa đánh giá
 
 ```http
 DELETE /reviews/:id
 ```
 
+**Headers:** `Authorization: Bearer <token>`
+
 Chỉ chủ sở hữu review hoặc staff/admin mới được phép.
+
+### 9.7 Trả lời đánh giá
+
+```http
+POST /reviews/:id/reply
+```
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Body:**
+
+```json
+{
+  "content": "Cảm ơn bạn đã đánh giá sản phẩm!"
+}
+```
+
+**Response Success (201):**
+
+```json
+{
+  "status": true,
+  "data": {
+    "_id": "64f1a2b3c4d5e6f7a8b9c0d2",
+    "reviewId": "64f1a2b3c4d5e6f7a8b9c0d1",
+    "userId": "64f1a2b3c4d5e6f7a8b9c0d3",
+    "content": "Cảm ơn bạn đã đánh giá sản phẩm!",
+    "createdAt": "2023-09-01T00:00:00.000Z"
+  }
+}
+```
+
+**Note:** Cho phép admin và user thường reply vào review.
+
+### 9.8 Lấy danh sách đánh giá (Admin)
+
+```http
+GET /reviews/admin?page=1&limit=10&sort=-createdAt
+```
+
+**Headers:** `Authorization: Bearer <admin_token>`
+
+**Query Parameters:**
+
+- `page`: Trang (default: 1)
+- `limit`: Số item/trang (default: 10, max: 100)
+- `sort`: `createdAt | -createdAt | rating | -rating` (default: `-createdAt`)
+- `productId`: Lọc theo product ID (optional)
+- `userId`: Lọc theo user ID (optional)
+- `rating`: Lọc theo rating (1-5, optional)
+
+**Response Success (200):**
+
+```json
+{
+  "status": true,
+  "data": {
+    "items": [...],
+    "pagination": { "page": 1, "limit": 10, "total": 150, "totalPages": 15 }
+  }
+}
+```
+
+### 9.9 Xóa đánh giá (Admin)
+
+```http
+DELETE /reviews/admin/:id
+```
+
+**Headers:** `Authorization: Bearer <admin_token>`
+
+**Response Success (200):**
+
+```json
+{
+  "status": true,
+  "data": {
+    "message": "Xóa đánh giá thành công"
+  }
+}
+```
 
 ### Ghi chú về cập nhật điểm rating sản phẩm
 
@@ -1659,6 +1831,25 @@ POST /wishlist/toggle
 ```
 
 **Note:** Nếu sản phẩm đã có trong wishlist, nó sẽ bị xóa. Nếu chưa có, nó sẽ được thêm vào.
+
+### 10.3 Xóa sản phẩm khỏi wishlist
+
+```http
+DELETE /wishlist/:productId
+```
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Response Success (200):**
+
+```json
+{
+  "status": true,
+  "data": {
+    "message": "Xóa sản phẩm khỏi wishlist thành công"
+  }
+}
+```
 
 ---
 
@@ -2124,6 +2315,299 @@ POST /upload/signature
 - Requires upload preset configured in Cloudinary dashboard
 - See `CLOUDINARY_SETUP_GUIDE.md` for setup instructions
 
+### 12.8 Upload Avatar
+
+```http
+POST /upload/avatar
+```
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Content-Type:** `multipart/form-data`
+
+**Form Data:**
+
+- `avatar`: File (image file, max 5MB)
+
+**Response Success (200):**
+
+```json
+{
+  "status": true,
+  "data": {
+    "url": "https://res.cloudinary.com/cloud_name/image/upload/v1234567890/avatars/abc123.jpg",
+    "publicId": "avatars/abc123",
+    "format": "jpg",
+    "width": 400,
+    "height": 400,
+    "bytes": 45678,
+    "createdAt": "2023-09-01T10:30:00.000Z",
+    "folder": "avatars"
+  },
+  "meta": {
+    "message": "Upload avatar thành công!"
+  }
+}
+```
+
+**Note:** Chỉ user được phép upload avatar của chính họ. Avatar sẽ tự động được resize và optimize.
+
+---
+
+## 13. Telegram (`/telegram`) - Admin Only
+
+### 13.1 Test Telegram Connection
+
+```http
+GET /telegram/test
+```
+
+**Headers:** `Authorization: Bearer <admin_token>`
+
+**Response Success (200):**
+
+```json
+{
+  "ok": true,
+  "message": "Telegram connection successful",
+  "botInfo": {
+    "id": 123456789,
+    "is_bot": true,
+    "first_name": "MERN Fashion Bot",
+    "username": "mern_fashion_bot"
+  }
+}
+```
+
+### 13.2 Send Test Message
+
+```http
+POST /telegram/test-message
+```
+
+**Headers:** `Authorization: Bearer <admin_token>`
+
+**Body:**
+
+```json
+{
+  "message": "This is a test message"
+}
+```
+
+**Response Success (200):**
+
+```json
+{
+  "ok": true,
+  "message": "Test message sent successfully"
+}
+```
+
+### 13.3 Send Test Security Alert
+
+```http
+POST /telegram/test-security-alert
+```
+
+**Headers:** `Authorization: Bearer <admin_token>`
+
+**Body:**
+
+```json
+{
+  "type": "Test Security Alert",
+  "severity": "medium",
+  "message": "This is a test security alert",
+  "details": "Test details for security alert"
+}
+```
+
+**Response Success (200):**
+
+```json
+{
+  "ok": true,
+  "message": "Test security alert sent successfully"
+}
+```
+
+### 13.4 Analyze Logs
+
+```http
+POST /telegram/analyze-logs
+```
+
+**Headers:** `Authorization: Bearer <admin_token>`
+
+**Body:**
+
+```json
+{
+  "hours": 1
+}
+```
+
+**Response Success (200):**
+
+```json
+{
+  "ok": true,
+  "message": "Log analysis completed",
+  "results": {
+    "timeframe": "2023-09-01T10:00:00.000Z to 2023-09-01T11:00:00.000Z",
+    "bruteForceAttempts": 5,
+    "suspiciousActivities": 2,
+    "cspViolations": 10,
+    "errorPatterns": 3,
+    "unauthorizedAccess": 1,
+    "statistics": {
+      "totalRequests": 1000,
+      "errorRate": 0.05,
+      "averageResponseTime": 150
+    }
+  }
+}
+```
+
+### 13.5 Send Daily Report
+
+```http
+POST /telegram/daily-report
+```
+
+**Headers:** `Authorization: Bearer <admin_token>`
+
+**Response Success (200):**
+
+```json
+{
+  "ok": true,
+  "message": "Daily report sent successfully"
+}
+```
+
+### 13.6 Get Scheduler Status
+
+```http
+GET /telegram/scheduler/status
+```
+
+**Headers:** `Authorization: Bearer <admin_token>`
+
+**Response Success (200):**
+
+```json
+{
+  "ok": true,
+  "message": "Scheduler status retrieved",
+  "isRunning": true,
+  "activeJobs": [
+    {
+      "name": "daily-report",
+      "schedule": "0 9 * * *",
+      "lastRun": "2023-09-01T09:00:00.000Z",
+      "nextRun": "2023-09-02T09:00:00.000Z"
+    }
+  ]
+}
+```
+
+### 13.7 Start Scheduler
+
+```http
+POST /telegram/scheduler/start
+```
+
+**Headers:** `Authorization: Bearer <admin_token>`
+
+**Response Success (200):**
+
+```json
+{
+  "ok": true,
+  "message": "Scheduler started successfully"
+}
+```
+
+### 13.8 Stop Scheduler
+
+```http
+POST /telegram/scheduler/stop
+```
+
+**Headers:** `Authorization: Bearer <admin_token>`
+
+**Response Success (200):**
+
+```json
+{
+  "ok": true,
+  "message": "Scheduler stopped successfully"
+}
+```
+
+### 13.9 Stop Job
+
+```http
+DELETE /telegram/scheduler/jobs/:jobName
+```
+
+**Headers:** `Authorization: Bearer <admin_token>`
+
+**Response Success (200):**
+
+```json
+{
+  "ok": true,
+  "message": "Job daily-report stopped successfully"
+}
+```
+
+### 13.10 Restart Job
+
+```http
+POST /telegram/scheduler/jobs/:jobName/restart
+```
+
+**Headers:** `Authorization: Bearer <admin_token>`
+
+**Response Success (200):**
+
+```json
+{
+  "ok": true,
+  "message": "Job daily-report restarted successfully"
+}
+```
+
+### 13.11 Send System Alert
+
+```http
+POST /telegram/system-alert
+```
+
+**Headers:** `Authorization: Bearer <admin_token>`
+
+**Body:**
+
+```json
+{
+  "type": "System Maintenance",
+  "message": "System will be under maintenance",
+  "details": "Maintenance scheduled from 2:00 AM to 4:00 AM"
+}
+```
+
+**Response Success (200):**
+
+```json
+{
+  "ok": true,
+  "message": "System alert sent successfully"
+}
+```
+
 ---
 
 ## Error Codes
@@ -2475,9 +2959,13 @@ FRONTEND_URL=http://localhost:3001
 
 ---
 
-_Tài liệu này được cập nhật lần cuối: 2025-11-04_
+_Tài liệu này được cập nhật lần cuối: 2025-11-11_
 
 **Thay đổi gần đây:**
 
-- Reviews: phân trang/sort nâng cao, endpoint summary, hỗ trợ upload ảnh (multipart/URL), giới hạn 5 ảnh, sanitization server-side, rate-limit write 20/15m, cập nhật `ratingAvg/ratingCount` bằng aggregation.
-- Upload: giữ nguyên các endpoint; bổ sung lưu ý Cloudinary trong phần reviews.
+- Users: Cập nhật quản lý địa chỉ với các endpoint riêng biệt (GET/POST/PUT/DELETE/PATCH), thay thế endpoint `/users/addresses/manage` cũ.
+- Products: Thêm endpoint `/products/recommendations` để lấy sản phẩm gợi ý dựa trên lịch sử mua hàng.
+- Reviews: Thêm endpoint reply (`POST /reviews/:id/reply`), admin routes (`GET /reviews/admin`, `DELETE /reviews/admin/:id`), phân trang/sort nâng cao, endpoint summary, hỗ trợ upload ảnh (multipart/URL), giới hạn 5 ảnh, sanitization server-side, rate-limit write 20/15m, cập nhật `ratingAvg/ratingCount` bằng aggregation.
+- Wishlist: Thêm endpoint `DELETE /wishlist/:productId` để xóa sản phẩm khỏi wishlist.
+- Upload: Thêm endpoint `POST /upload/avatar` để user upload avatar của chính họ.
+- Telegram: Thêm đầy đủ các endpoint quản lý Telegram bot, scheduler, và phân tích logs (11 endpoints).

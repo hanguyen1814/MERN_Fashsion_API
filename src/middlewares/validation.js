@@ -80,6 +80,79 @@ const userValidation = {
     param("id").isMongoId().withMessage("ID người dùng không hợp lệ"),
     handleValidationErrors,
   ],
+
+  address: [
+    body("fullName")
+      .trim()
+      .isLength({ min: 2, max: 50 })
+      .withMessage("Họ tên phải từ 2-50 ký tự"),
+    body("phone")
+      .matches(/^0\d{9}$/)
+      .withMessage("Số điện thoại không hợp lệ"),
+    body("street")
+      .trim()
+      .isLength({ min: 5, max: 200 })
+      .withMessage("Địa chỉ đường phải từ 5-200 ký tự"),
+    body("ward")
+      .trim()
+      .isLength({ min: 1, max: 100 })
+      .withMessage("Phường/xã phải từ 1-100 ký tự"),
+    body("district")
+      .trim()
+      .isLength({ min: 1, max: 100 })
+      .withMessage("Quận/huyện phải từ 1-100 ký tự"),
+    body("province")
+      .trim()
+      .isLength({ min: 1, max: 100 })
+      .withMessage("Tỉnh/thành phố phải từ 1-100 ký tự"),
+    body("isDefault")
+      .optional()
+      .isBoolean()
+      .withMessage("isDefault phải là boolean"),
+    handleValidationErrors,
+  ],
+
+  addressUpdate: [
+    body("fullName")
+      .optional()
+      .trim()
+      .isLength({ min: 2, max: 50 })
+      .withMessage("Họ tên phải từ 2-50 ký tự"),
+    body("phone")
+      .optional()
+      .matches(/^0\d{9}$/)
+      .withMessage("Số điện thoại không hợp lệ"),
+    body("street")
+      .optional()
+      .trim()
+      .isLength({ min: 5, max: 200 })
+      .withMessage("Địa chỉ đường phải từ 5-200 ký tự"),
+    body("ward")
+      .optional()
+      .trim()
+      .isLength({ min: 1, max: 100 })
+      .withMessage("Phường/xã phải từ 1-100 ký tự"),
+    body("district")
+      .optional()
+      .trim()
+      .isLength({ min: 1, max: 100 })
+      .withMessage("Quận/huyện phải từ 1-100 ký tự"),
+    body("province")
+      .optional()
+      .trim()
+      .isLength({ min: 1, max: 100 })
+      .withMessage("Tỉnh/thành phố phải từ 1-100 ký tự"),
+    body("isDefault")
+      .optional()
+      .isBoolean()
+      .withMessage("isDefault phải là boolean"),
+    handleValidationErrors,
+  ],
+
+  addressId: [
+    param("id").isMongoId().withMessage("ID địa chỉ không hợp lệ"),
+    handleValidationErrors,
+  ],
 };
 
 // Validation rules cho Product
@@ -249,6 +322,16 @@ const reviewValidation = {
       .optional()
       .isURL()
       .withMessage("Đường dẫn ảnh không hợp lệ"),
+    handleValidationErrors,
+  ],
+  reply: [
+    body("content")
+      .trim()
+      .notEmpty()
+      .withMessage("Nội dung reply không được để trống")
+      .bail()
+      .isLength({ max: 1000 })
+      .withMessage("Nội dung không được quá 1000 ký tự"),
     handleValidationErrors,
   ],
 };

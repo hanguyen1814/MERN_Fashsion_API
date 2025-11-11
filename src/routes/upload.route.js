@@ -8,12 +8,14 @@ const {
   deleteMultipleImages,
   getTransformedUrl,
   generateUploadSignature,
+  uploadAvatar,
 } = require("../controllers/upload.controller");
 
 const {
   uploadSingle,
   uploadMultiple,
   uploadFields,
+  uploadSingleAvatar,
   handleMulterError,
 } = require("../middlewares/upload");
 
@@ -108,6 +110,19 @@ router.post(
   authenticate(),
   rbac(["admin", "staff"]),
   generateUploadSignature
+);
+
+/**
+ * @route   POST /api/upload/avatar
+ * @desc    Upload user avatar (chỉ user upload avatar của chính họ)
+ * @access  Private (Authenticated users only)
+ */
+router.post(
+  "/avatar",
+  authenticate(),
+  uploadSingleAvatar(),
+  handleMulterError,
+  uploadAvatar
 );
 
 module.exports = router;

@@ -253,6 +253,94 @@ const generateUploadSignature = asyncHandler(async (req, res) => {
   }
 });
 
+/**
+ * Upload avatar cho user
+ * POST /api/upload/avatar
+ * Chỉ cho phép user upload avatar của chính họ
+ */
+const uploadAvatar = asyncHandler(async (req, res) => {
+  try {
+    if (!req.file) {
+      return fail(res, 400, "Không có file được upload!");
+    }
+
+    const userId = req.user?.id;
+    if (!userId) {
+      return fail(res, 401, "Chưa đăng nhập");
+    }
+
+    // Kiểm tra file type nghiêm ngặt
+    const allowedMimes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+    if (!allowedMimes.includes(req.file.mimetype)) {
+      return fail(
+        res,
+        400,
+        "Chỉ cho phép upload file ảnh định dạng JPG, PNG hoặc WEBP!"
+      );
+    }
+
+    // Kiểm tra file size (tối đa 5MB cho avatar)
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    if (req.file.size > maxSize) {
+      return fail(res, 400, "File quá lớn! Kích thước tối đa là 5MB.");
+    }
+
+    const User = require("../models/user.model");
+    const user = await User.findById(userId);
+    if (!user) {
+      return fail(res, 404, "Không tìm thấy người dùng");
+    }
+
+    // Xóa avatar cũ nếu có
+    if (user.avatarUrl) {
+      try {
+        // Extract publicId từ URL Cloudinary
+        // Format: https://res.cloudinary.com/cloud_name/image/upload/v1234567890/folder/public_id.ext
+        const urlMatch = user.avatarUrl.match(
+          /\/upload\/(?:v\d+\/)?(.+?)(?:\.[^.]+)?$/
+        );
+        if (urlMatch && urlMatch[1]) {
+          const publicId = urlMatch[1];
+          await UploadService.deleteFile(publicId);
+          logger.info(`Deleted old avatar: ${publicId}`, { userId });
+        }
+      } catch (error) {
+        logger.warn("Không thể xóa avatar cũ:", error);
+        // Không throw error, tiếp tục upload avatar mới
+      }
+    }
+
+    // Upload avatar mới với transformation
+    const result = await UploadService.uploadFile(req.file, FOLDERS.avatars, {
+      transformation: require("../config/cloudinary").TRANSFORMATIONS.avatar,
+      publicId: `avatar_${userId}_${Date.now()}`,
+      tags: ["avatar", `userId-${userId}`],
+    });
+
+    if (!result.success) {
+      return fail(res, 500, "Lỗi khi upload avatar: " + result.error);
+    }
+
+    // Cập nhật avatarUrl trong database
+    user.avatarUrl = result.data.url;
+    await user.save();
+
+    logger.info(`Avatar uploaded for user ${userId}`, {
+      userId,
+      publicId: result.data.publicId,
+    });
+
+    return ok(res, {
+      url: result.data.url,
+      publicId: result.data.publicId,
+      message: "Upload avatar thành công!",
+    });
+  } catch (error) {
+    logger.error("Upload avatar error:", error);
+    return fail(res, 500, "Lỗi server khi upload avatar");
+  }
+});
+
 module.exports = {
   uploadSingleImage,
   uploadMultipleImages,
@@ -261,4 +349,5 @@ module.exports = {
   deleteMultipleImages,
   getTransformedUrl,
   generateUploadSignature,
+  uploadAvatar,
 };

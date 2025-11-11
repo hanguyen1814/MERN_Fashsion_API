@@ -17,7 +17,34 @@ router.put(
 );
 // Chuẩn hoá: PUT /api/users/:id/password (cho phép admin hoặc chính chủ)
 router.put("/password/change", auth(), UserController.changePassword);
-router.post("/addresses/manage", auth(), UserController.manageAddresses);
+
+// Routes cho quản lý địa chỉ
+router.get("/addresses", auth(), UserController.getAddresses);
+router.post(
+  "/addresses",
+  auth(),
+  userValidation.address,
+  UserController.addAddress
+);
+router.put(
+  "/addresses/:id",
+  auth(),
+  userValidation.addressId,
+  userValidation.addressUpdate,
+  UserController.updateAddress
+);
+router.delete(
+  "/addresses/:id",
+  auth(),
+  userValidation.addressId,
+  UserController.deleteAddress
+);
+router.patch(
+  "/addresses/:id/default",
+  auth(),
+  userValidation.addressId,
+  UserController.setDefaultAddress
+);
 
 // Routes cho admin
 router.get(

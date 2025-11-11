@@ -14,9 +14,38 @@ class OrderController {
    */
   static listMine = asyncHandler(async (req, res) => {
     const userId = req.user.id;
-    const orders = await Order.find({ userId }).sort({ createdAt: -1 });
+    const {
+      page = 1,
+      limit = 20,
+      status,
+      sort = "createdAt",
+      order = "desc",
+    } = req.query;
 
-    return ok(res, orders);
+    const query = { userId };
+    if (status) query.status = status;
+
+    const pageNumber = Math.max(parseInt(page, 10) || 1, 1);
+    const limitNumber = Math.max(parseInt(limit, 10) || 20, 1);
+    const skip = (pageNumber - 1) * limitNumber;
+
+    const sortObj = {};
+    sortObj[sort] = order === "asc" ? 1 : -1;
+
+    const [orders, total] = await Promise.all([
+      Order.find(query).sort(sortObj).skip(skip).limit(limitNumber),
+      Order.countDocuments(query),
+    ]);
+
+    return ok(res, {
+      orders,
+      pagination: {
+        page: pageNumber,
+        limit: limitNumber,
+        total,
+        pages: Math.ceil(total / limitNumber),
+      },
+    });
   });
 
   /**
@@ -353,12 +382,14 @@ class OrderController {
     sortObj[sort] = order === "asc" ? 1 : -1;
 
     // Thực hiện query với pagination
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const pageNumber = Math.max(parseInt(page, 10) || 1, 1);
+    const limitNumber = Math.max(parseInt(limit, 10) || 20, 1);
+    const skip = (pageNumber - 1) * limitNumber;
     const orders = await Order.find(query)
       .populate("userId", "fullName email phone")
       .sort(sortObj)
       .skip(skip)
-      .limit(parseInt(limit));
+      .limit(limitNumber);
 
     const total = await Order.countDocuments(query);
 
@@ -389,10 +420,10 @@ class OrderController {
     return ok(res, {
       orders: formattedOrders,
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
+        page: pageNumber,
+        limit: limitNumber,
         total,
-        pages: Math.ceil(total / parseInt(limit)),
+        pages: Math.ceil(total / limitNumber),
       },
     });
   });

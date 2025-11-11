@@ -90,6 +90,41 @@ const mapProductSearchResult = (p) => {
   };
 };
 
+const ALLOWED_SIZES = ["S", "M", "L", "XL", "ONE SIZE"];
+
+const normalizeSizeValues = (input) => {
+  if (input === undefined || input === null) return [];
+  const rawValues = Array.isArray(input)
+    ? input
+    : String(input)
+        .split(",")
+        .map((value) => value);
+  const normalized = rawValues
+    .filter((value) => value !== undefined && value !== null)
+    .map((value) =>
+      typeof value === "string"
+        ? value.trim().toUpperCase()
+        : String(value).trim().toUpperCase()
+    )
+    .filter((value) => value !== "");
+  const uniqueValues = [...new Set(normalized)];
+  return uniqueValues.filter((value) => ALLOWED_SIZES.includes(value));
+};
+
+const buildSizeFilter = (input) => {
+  const sizes = normalizeSizeValues(input);
+  if (sizes.length === 0) return null;
+  if (sizes.length === 1) return sizes[0];
+  return { $in: sizes };
+};
+
+const formatFacetSizes = (sizes) => {
+  if (!sizes) return [];
+  const flattened = Array.isArray(sizes) ? sizes.flat(Infinity) : [sizes];
+  const normalized = normalizeSizeValues(flattened);
+  return ALLOWED_SIZES.filter((size) => normalized.includes(size));
+};
+
 const mapCategory = (c) =>
   c
     ? {
@@ -187,24 +222,9 @@ class ProductController {
       }
     }
 
-    // Xử lý size filter - hỗ trợ cả mảng và string (comma-separated)
-    if (size) {
-      if (Array.isArray(size)) {
-        const sizeArray = size.filter((s) => s && s.trim() !== "");
-        if (sizeArray.length > 0) {
-          variantFilters.size = { $in: sizeArray };
-        }
-      } else if (typeof size === "string" && size.trim() !== "") {
-        // Hỗ trợ comma-separated values
-        const sizeArray = size
-          .split(",")
-          .map((s) => s.trim())
-          .filter((s) => s !== "");
-        if (sizeArray.length > 0) {
-          variantFilters.size =
-            sizeArray.length === 1 ? sizeArray[0] : { $in: sizeArray };
-        }
-      }
+    const sizeFilterValue = buildSizeFilter(size);
+    if (sizeFilterValue) {
+      variantFilters.size = sizeFilterValue;
     }
 
     // Xử lý price filter
@@ -527,24 +547,9 @@ class ProductController {
       }
     }
 
-    // Xử lý size filter - hỗ trợ cả mảng và string (comma-separated)
-    if (size) {
-      if (Array.isArray(size)) {
-        const sizeArray = size.filter((s) => s && s.trim() !== "");
-        if (sizeArray.length > 0) {
-          variantFilters.size = { $in: sizeArray };
-        }
-      } else if (typeof size === "string" && size.trim() !== "") {
-        // Hỗ trợ comma-separated values
-        const sizeArray = size
-          .split(",")
-          .map((s) => s.trim())
-          .filter((s) => s !== "");
-        if (sizeArray.length > 0) {
-          variantFilters.size =
-            sizeArray.length === 1 ? sizeArray[0] : { $in: sizeArray };
-        }
-      }
+    const sizeFilterValue = buildSizeFilter(size);
+    if (sizeFilterValue) {
+      variantFilters.size = sizeFilterValue;
     }
 
     // Xử lý price filter
@@ -950,24 +955,9 @@ class ProductController {
       }
     }
 
-    // Xử lý size filter - hỗ trợ cả mảng và string (comma-separated)
-    if (size) {
-      if (Array.isArray(size)) {
-        const sizeArray = size.filter((s) => s && s.trim() !== "");
-        if (sizeArray.length > 0) {
-          variantFilters.size = { $in: sizeArray };
-        }
-      } else if (typeof size === "string" && size.trim() !== "") {
-        // Hỗ trợ comma-separated values
-        const sizeArray = size
-          .split(",")
-          .map((s) => s.trim())
-          .filter((s) => s !== "");
-        if (sizeArray.length > 0) {
-          variantFilters.size =
-            sizeArray.length === 1 ? sizeArray[0] : { $in: sizeArray };
-        }
-      }
+    const sizeFilterValue = buildSizeFilter(size);
+    if (sizeFilterValue) {
+      variantFilters.size = sizeFilterValue;
     }
 
     // Xử lý price filter
@@ -1245,7 +1235,7 @@ class ProductController {
           brands: facets.brands || [],
           categories: facets.categories || [],
           colors: facets.colors?.flat() || [],
-          sizes: facets.sizes?.flat() || [],
+          sizes: formatFacetSizes(facets.sizes),
           tags: facets.tags?.flat() || [],
           priceRange: {
             min: facets.minPrice || 0,
@@ -1319,7 +1309,9 @@ class ProductController {
         brands: facets.brands || [],
         categories: facets.categories || [],
         colors: facets.colors?.flat() || [],
-        sizes: facets.sizes?.flat() || [],
+        sizes: formatFacetSizes(facets.sizes),
+        colors: facets.colors?.flat() || [],
+        sizes: formatFacetSizes(facets.sizes),
         tags: facets.tags?.flat() || [],
         priceRange: {
           min: facets.minPrice || 0,

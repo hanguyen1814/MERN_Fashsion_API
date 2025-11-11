@@ -24,6 +24,27 @@ const upload = multer({
   },
 });
 
+// Cấu hình multer cho avatar (giới hạn nghiêm ngặt hơn)
+const uploadAvatar = multer({
+  storage: storage,
+  fileFilter: (req, file, cb) => {
+    // Chỉ cho phép các định dạng ảnh phổ biến
+    const allowedMimes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+    if (allowedMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(
+        new Error("Chỉ cho phép upload file ảnh định dạng JPG, PNG hoặc WEBP!"),
+        false
+      );
+    }
+  },
+  limits: {
+    fileSize: 5 * 1024 * 1024, // Giới hạn 5MB cho avatar
+    files: 1, // Chỉ 1 file
+  },
+});
+
 // Middleware upload single file
 const uploadSingle = (fieldName = "image") => {
   return upload.single(fieldName);
@@ -90,12 +111,36 @@ const validateFileSize = (size, maxSizeMB = 10) => {
   return size <= maxSizeBytes;
 };
 
+// Middleware upload single file cho avatar
+const uploadSingleAvatar = () => {
+  return uploadAvatar.single("avatar");
+};
+
+// Utility function để validate file type nghiêm ngặt hơn
+const validateStrictImageType = (mimetype) => {
+  const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+  return allowedTypes.includes(mimetype);
+};
+
+// Utility function để sanitize filename
+const sanitizeFilename = (filename) => {
+  // Loại bỏ các ký tự đặc biệt, chỉ giữ chữ, số, dấu gạch ngang và dấu chấm
+  return filename
+    .replace(/[^a-zA-Z0-9.-]/g, "_")
+    .replace(/_{2,}/g, "_")
+    .substring(0, 100); // Giới hạn độ dài
+};
+
 module.exports = {
   upload,
   uploadSingle,
   uploadMultiple,
   uploadFields,
+  uploadAvatar,
+  uploadSingleAvatar,
   handleMulterError,
   validateImageType,
+  validateStrictImageType,
   validateFileSize,
+  sanitizeFilename,
 };
