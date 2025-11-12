@@ -5,4 +5,3 @@ exports.genOrderCode = () => {
     .padStart(6, "0");
   return `FSH-${yyyy}-${rnd}`;
 };
-    

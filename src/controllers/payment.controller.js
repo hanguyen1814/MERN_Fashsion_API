@@ -1,6 +1,8 @@
 const Order = require("../models/order.model");
+const User = require("../models/user.model");
 const WebhookLog = require("../models/webhookLog.model");
 const PaymentService = require("../services/payment.service");
+const emailService = require("../services/email.service");
 const asyncHandler = require("../utils/asyncHandler");
 const { ok, error } = require("../utils/apiResponse");
 const logger = require("../config/logger");
@@ -53,6 +55,28 @@ class PaymentController {
         return error(res, "Đơn hàng đã được xử lý", 400);
       }
 
+      // Kiểm tra nếu đơn hàng đã có link thanh toán hợp lệ
+      if (
+        order.payment?.raw?.payUrl &&
+        order.payment?.status === "pending" &&
+        order.payment?.raw?.requestId
+      ) {
+        logger.info(`Returning existing payment URL for order: ${orderId}`, {
+          orderId,
+          userId: req.user?.id,
+          existingRequestId: order.payment.raw.requestId,
+        });
+
+        return ok(res, {
+          message: "Link thanh toán đã tồn tại",
+          paymentUrl: order.payment.raw.payUrl,
+          deeplink: order.payment.raw.deeplink || null,
+          qrCodeUrl: order.payment.raw.qrCodeUrl || null,
+          orderId: order.code,
+          existing: true,
+        });
+      }
+
       // Chuẩn bị dữ liệu thanh toán
       const paymentData = {
         orderId: order.code,
@@ -87,6 +111,9 @@ class PaymentController {
           requestId: result.requestId || paymentData.requestId,
           momoOrderId: result.data.orderId,
           payUrl: result.paymentUrl,
+          deeplink: result.deeplink || null,
+          qrCodeUrl: result.qrCodeUrl || null,
+          createdAt: new Date(),
         };
         await order.save();
 
@@ -150,15 +177,51 @@ class PaymentController {
           }
 
           order.payment.status = "paid";
-          order.payment.transactionId = result.transactionId;
+          order.payment.transactionId = result.transactionId?.toString();
+          order.payment.provider = "momo";
           order.status = "paid";
           order.timeline.push({
             status: "paid",
             note: `Thanh toán MoMo thành công - ${result.message}`,
           });
+
+          // Cập nhật raw data với thông tin từ IPN
+          order.payment.raw = {
+            ...(order.payment.raw || {}),
+            ipnReceivedAt: new Date(),
+            ipnData: req.body,
+          };
+
           await order.save();
 
-          logger.info(`Order ${result.orderId} updated to PAID`);
+          logger.info(`Order ${result.orderId} updated to PAID via webhook`);
+
+          // Gửi email xác nhận thanh toán thành công
+          try {
+            const user = await User.findById(order.userId);
+            if (user && user.email) {
+              await emailService.sendPaymentConfirmationEmail(order, user);
+              logger.info(
+                `Payment confirmation email sent for order: ${result.orderId}`,
+                {
+                  orderId: result.orderId,
+                  userId: order.userId,
+                  email: user.email,
+                  category: "email_payment_confirmation",
+                  action: "payment_confirmation_email_sent",
+                }
+              );
+            }
+          } catch (emailError) {
+            logger.error(
+              `Failed to send payment confirmation email for order: ${result.orderId}`,
+              {
+                error: emailError.message,
+                orderId: result.orderId,
+                category: "email_error",
+              }
+            );
+          }
         }
       } else {
         // Xử lý thanh toán thất bại
@@ -230,12 +293,154 @@ class PaymentController {
           order.payment.raw.requestId
         );
 
-        if (queryResult.success) {
+        if (queryResult.success && queryResult.data) {
+          const momoStatus = queryResult.data;
+          let autoUpdated = false;
+
+          // Tự động cập nhật đơn hàng nếu thanh toán thành công
+          if (momoStatus.resultCode === 0) {
+            // Chỉ cập nhật nếu chưa được cập nhật thành paid
+            const needsUpdate =
+              order.status !== "paid" ||
+              order.payment.status !== "paid" ||
+              !order.payment.transactionId;
+
+            if (needsUpdate) {
+              // Kiểm tra số tiền khớp
+              if (
+                momoStatus.amount &&
+                Number(order.total) !== Number(momoStatus.amount)
+              ) {
+                order.payment.status = "review";
+                order.timeline.push({
+                  status: "pending",
+                  note: `Số tiền query (${momoStatus.amount}) không khớp tổng đơn (${order.total})`,
+                });
+                await order.save();
+
+                logger.warn(
+                  `Amount mismatch for order ${orderId}: query=${momoStatus.amount}, order=${order.total}`
+                );
+              } else {
+                // Cập nhật đơn hàng thành công
+                const wasPending =
+                  order.status === "pending" &&
+                  order.payment.status === "pending";
+
+                order.payment.status = "paid";
+                order.payment.transactionId = momoStatus.transId?.toString();
+                order.payment.provider = "momo";
+                order.status = "paid";
+
+                // Chỉ thêm timeline nếu chưa có entry paid
+                const hasPaidTimeline = order.timeline.some(
+                  (t) => t.status === "paid"
+                );
+                if (!hasPaidTimeline) {
+                  order.timeline.push({
+                    status: "paid",
+                    note: `Thanh toán MoMo thành công - ${
+                      momoStatus.message || "Payment successful"
+                    }`,
+                  });
+                }
+
+                // Cập nhật raw data với thông tin từ query
+                order.payment.raw = {
+                  ...(order.payment.raw || {}),
+                  lastQueryTime: new Date(),
+                  momoStatus: {
+                    partnerCode: momoStatus.partnerCode,
+                    orderId: momoStatus.orderId,
+                    requestId: momoStatus.requestId,
+                    amount: momoStatus.amount,
+                    transId: momoStatus.transId,
+                    payType: momoStatus.payType,
+                    resultCode: momoStatus.resultCode,
+                    message: momoStatus.message,
+                    responseTime: momoStatus.responseTime,
+                    lastUpdated: momoStatus.lastUpdated,
+                  },
+                };
+
+                try {
+                  await order.save();
+                  autoUpdated = true;
+
+                  logger.info(
+                    `Order ${orderId} auto-updated to PAID from query status check (wasPending: ${wasPending})`,
+                    {
+                      orderId,
+                      oldStatus: wasPending ? "pending" : order.status,
+                      newStatus: "paid",
+                      transactionId: momoStatus.transId,
+                    }
+                  );
+
+                  // Gửi email xác nhận thanh toán thành công (chỉ khi vừa mới chuyển sang paid)
+                  if (wasPending) {
+                    try {
+                      const user = await User.findById(order.userId);
+                      if (user && user.email) {
+                        await emailService.sendPaymentConfirmationEmail(
+                          order,
+                          user
+                        );
+                        logger.info(
+                          `Payment confirmation email sent for order: ${orderId}`,
+                          {
+                            orderId,
+                            userId: order.userId,
+                            email: user.email,
+                            category: "email_payment_confirmation",
+                            action: "payment_confirmation_email_sent",
+                          }
+                        );
+                      }
+                    } catch (emailError) {
+                      logger.error(
+                        `Failed to send payment confirmation email for order: ${orderId}`,
+                        {
+                          error: emailError.message,
+                          orderId,
+                          category: "email_error",
+                        }
+                      );
+                    }
+                  }
+                } catch (saveError) {
+                  logger.error(
+                    `Failed to save order ${orderId} after auto-update:`,
+                    saveError
+                  );
+                  throw saveError;
+                }
+              }
+            }
+          } else if (
+            momoStatus.resultCode !== 0 &&
+            order.payment.status === "paid"
+          ) {
+            // Nếu MoMo báo thất bại nhưng đơn hàng đang paid, có thể cần review
+            logger.warn(
+              `Order ${orderId} is marked as paid but MoMo query returned resultCode: ${momoStatus.resultCode}`
+            );
+          }
+
+          // Reload order để lấy dữ liệu mới nhất từ database
+          const updatedOrder = await Order.findOne({ code: orderId }).lean();
+
+          if (!updatedOrder) {
+            logger.error(`Order ${orderId} not found after update`);
+            return error(res, "Đơn hàng không tồn tại", 404);
+          }
+
           return ok(res, {
             orderId: orderId,
-            status: order.status,
-            paymentStatus: order.payment.status,
-            momoStatus: queryResult.data,
+            status: updatedOrder.status,
+            paymentStatus: updatedOrder.payment?.status || "pending",
+            momoStatus: momoStatus,
+            autoUpdated: autoUpdated,
           });
         }
       }

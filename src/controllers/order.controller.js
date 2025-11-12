@@ -7,6 +7,8 @@ const InventoryLog = require("../models/inventoryLog.model");
 const { genOrderCode } = require("../utils/orderCode");
 const asyncHandler = require("../utils/asyncHandler");
 const { ok, created, fail } = require("../utils/apiResponse");
+const emailService = require("../services/email.service");
+const logger = require("../config/logger");
 
 class OrderController {
   /**
@@ -46,6 +48,163 @@ class OrderController {
         pages: Math.ceil(total / limitNumber),
       },
     });
+  });
+
+  /**
+   * Lấy chi tiết đơn hàng của user hiện tại
+   */
+  static getMine = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    // Cho phép tìm bằng code hoặc _id
+    const query = mongoose.Types.ObjectId.isValid(id)
+      ? { _id: id, userId }
+      : { code: id, userId };
+
+    const order = await Order.findOne(query);
+
+    if (!order) {
+      return fail(res, 404, "Không tìm thấy đơn hàng");
+    }
+
+    return ok(res, order);
+  });
+
+  /**
+   * User hủy đơn hàng
+   */
+  static cancelOrder = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { reason } = req.body;
+    const userId = req.user.id;
+
+    // Cho phép tìm bằng code hoặc _id
+    const query = mongoose.Types.ObjectId.isValid(id)
+      ? { _id: id, userId }
+      : { code: id, userId };
+
+    const order = await Order.findOne(query);
+    if (!order) {
+      return fail(res, 404, "Không tìm thấy đơn hàng");
+    }
+
+    // Kiểm tra trạng thái có thể hủy không
+    const cancellableStatuses = ["pending", "paid"];
+    if (!cancellableStatuses.includes(order.status)) {
+      return fail(
+        res,
+        400,
+        `Không thể hủy đơn hàng ở trạng thái "${order.status}". Chỉ có thể hủy đơn hàng ở trạng thái "pending" hoặc "paid".`
+      );
+    }
+
+    // Sử dụng transaction để đảm bảo tính nhất quán
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      // Hoàn trả tồn kho
+      for (const item of order.items) {
+        const product = await Product.findById(item.productId).session(session);
+        if (product) {
+          const variant = product.variants.find((v) => v.sku === item.sku);
+          if (variant) {
+            variant.stock += item.quantity;
+            await product.save({ session });
+
+            // Ghi log tồn kho
+            await InventoryLog.create(
+              [
+                {
+                  productId: product._id,
+                  sku: item.sku,
+                  quantity: item.quantity,
+                  reason: "order_cancelled",
+                  refId: order.code,
+                },
+              ],
+              { session }
+            );
+          }
+        }
+      }
+
+      // Cập nhật trạng thái đơn hàng
+      order.status = "cancelled";
+      order.timeline.push({
+        status: "cancelled",
+        note: reason || `Đơn hàng bị hủy bởi khách hàng`,
+      });
+
+      // Nếu đã thanh toán, cần hoàn tiền (đánh dấu payment status)
+      if (order.payment.status === "paid") {
+        order.payment.status = "refunded";
+        order.timeline.push({
+          status: "cancelled",
+          note: "Đơn hàng đã thanh toán, cần xử lý hoàn tiền",
+        });
+      }
+
+      await order.save({ session });
+      await session.commitTransaction();
+
+      // Gửi email thông báo hủy đơn
+      try {
+        const user = await User.findById(userId);
+        if (user && user.email) {
+          await emailService.sendOrderCancelledEmail(order, user, reason);
+          logger.info(
+            `Order cancellation email sent for order: ${order.code}`,
+            {
+              orderId: order._id,
+              orderCode: order.code,
+              userId,
+              email: user.email,
+              category: "email_order_cancelled",
+              action: "order_cancelled_email_sent",
+            }
+          );
+        }
+      } catch (emailError) {
+        logger.error(
+          `Failed to send cancellation email for order: ${order.code}`,
+          {
+            error: emailError.message,
+            orderId: order._id,
+            orderCode: order.code,
+            userId,
+            category: "email_error",
+          }
+        );
+      }
+
+      logger.info(`Order cancelled by user: ${order.code}`, {
+        orderId: order._id,
+        orderCode: order.code,
+        userId,
+        reason,
+        category: "order_cancelled",
+        action: "user_cancelled_order",
+      });
+
+      return ok(res, {
+        message: "Đơn hàng đã được hủy thành công",
+        order,
+      });
+    } catch (error) {
+      await session.abortTransaction();
+      logger.error(`Failed to cancel order: ${order.code}`, {
+        error: error.message,
+        orderId: order._id,
+        orderCode: order.code,
+        userId,
+        category: "order_error",
+      });
+      return fail(res, 500, "Lỗi khi hủy đơn hàng: " + error.message);
+    } finally {
+      session.endSession();
+    }
   });
 
   /**
@@ -179,6 +338,35 @@ class OrderController {
       await cart.save({ session });
 
       await session.commitTransaction();
+
+      // Gửi email hóa đơn (không block response nếu lỗi)
+      try {
+        const user = await User.findById(userId);
+        if (user && user.email) {
+          await emailService.sendOrderInvoice(order[0], user);
+          logger.info(`Order invoice email sent for order: ${order[0].code}`, {
+            orderId: order[0]._id,
+            orderCode: order[0].code,
+            userId,
+            email: user.email,
+            category: "email_invoice",
+            action: "invoice_email_sent",
+          });
+        }
+      } catch (emailError) {
+        // Log lỗi nhưng không fail order creation
+        logger.error(
+          `Failed to send invoice email for order: ${order[0].code}`,
+          {
+            error: emailError.message,
+            orderId: order[0]._id,
+            orderCode: order[0].code,
+            userId,
+            category: "email_error",
+          }
+        );
+      }
+
       return created(res, order[0]);
     } catch (error) {
       await session.abortTransaction();
@@ -305,6 +493,32 @@ class OrderController {
       // Cập nhật refId cho inventory log nếu cần (bỏ qua để tránh quét cả collection)
 
       await session.commitTransaction();
+
+      // Gửi email hóa đơn (không block response nếu lỗi)
+      try {
+        const user = await User.findById(userId);
+        if (user && user.email) {
+          await emailService.sendOrderInvoice(order, user);
+          logger.info(`Order invoice email sent for order: ${order.code}`, {
+            orderId: order._id,
+            orderCode: order.code,
+            userId,
+            email: user.email,
+            category: "email_invoice",
+            action: "invoice_email_sent",
+          });
+        }
+      } catch (emailError) {
+        // Log lỗi nhưng không fail order creation
+        logger.error(`Failed to send invoice email for order: ${order.code}`, {
+          error: emailError.message,
+          orderId: order._id,
+          orderCode: order.code,
+          userId,
+          category: "email_error",
+        });
+      }
+
       return created(res, order);
     } catch (error) {
       await session.abortTransaction();
@@ -313,6 +527,24 @@ class OrderController {
       session.endSession();
     }
   });
+
+  /**
+   * Validate status transition
+   */
+  static validateStatusTransition(oldStatus, newStatus) {
+    const validTransitions = {
+      pending: ["paid", "cancelled"],
+      paid: ["processing", "cancelled", "refunded"],
+      processing: ["shipped", "cancelled", "refunded"],
+      shipped: ["completed", "cancelled", "refunded"],
+      completed: [], // Không thể chuyển từ completed
+      cancelled: [], // Không thể chuyển từ cancelled
+      refunded: [], // Không thể chuyển từ refunded
+    };
+
+    const allowed = validTransitions[oldStatus] || [];
+    return allowed.includes(newStatus);
+  }
 
   /**
    * Cập nhật trạng thái đơn hàng (staff/admin)
@@ -324,6 +556,20 @@ class OrderController {
 
     if (!status) return fail(res, 400, "Thiếu trạng thái mới");
 
+    // Validate status enum
+    const validStatuses = [
+      "pending",
+      "paid",
+      "processing",
+      "shipped",
+      "completed",
+      "cancelled",
+      "refunded",
+    ];
+    if (!validStatuses.includes(status)) {
+      return fail(res, 400, `Trạng thái "${status}" không hợp lệ`);
+    }
+
     // Cho phép cập nhật bằng code hoặc _id
     const query = mongoose.Types.ObjectId.isValid(id)
       ? { _id: id }
@@ -332,12 +578,129 @@ class OrderController {
     const order = await Order.findOne(query);
     if (!order) return fail(res, 404, "Không tìm thấy đơn hàng");
 
-    order.status = status;
-    order.timeline.push({
-      status,
-      note: note || `Cập nhật trạng thái: ${status}`,
-    });
-    await order.save();
+    const oldStatus = order.status;
+
+    // Validate status transition
+    if (
+      oldStatus !== status &&
+      !this.validateStatusTransition(oldStatus, status)
+    ) {
+      return fail(
+        res,
+        400,
+        `Không thể chuyển đơn hàng từ trạng thái "${oldStatus}" sang "${status}". Chuyển đổi không hợp lệ.`
+      );
+    }
+
+    // Nếu chuyển sang cancelled hoặc refunded, hoàn trả tồn kho
+    if (
+      (status === "cancelled" || status === "refunded") &&
+      oldStatus !== "cancelled" &&
+      oldStatus !== "refunded"
+    ) {
+      const session = await mongoose.startSession();
+      session.startTransaction();
+
+      try {
+        // Hoàn trả tồn kho
+        for (const item of order.items) {
+          const product = await Product.findById(item.productId).session(
+            session
+          );
+          if (product) {
+            const variant = product.variants.find((v) => v.sku === item.sku);
+            if (variant) {
+              variant.stock += item.quantity;
+              await product.save({ session });
+
+              // Ghi log tồn kho
+              await InventoryLog.create(
+                [
+                  {
+                    productId: product._id,
+                    sku: item.sku,
+                    quantity: item.quantity,
+                    reason:
+                      status === "cancelled"
+                        ? "order_cancelled"
+                        : "order_refunded",
+                    refId: order.code,
+                  },
+                ],
+                { session }
+              );
+            }
+          }
+        }
+
+        order.status = status;
+        order.timeline.push({
+          status,
+          note: note || `Cập nhật trạng thái: ${status}`,
+        });
+
+        // Cập nhật payment status nếu cần
+        if (status === "refunded" && order.payment.status === "paid") {
+          order.payment.status = "refunded";
+        }
+
+        await order.save({ session });
+        await session.commitTransaction();
+      } catch (error) {
+        await session.abortTransaction();
+        logger.error(
+          `Failed to update order status with inventory refund: ${order.code}`,
+          {
+            error: error.message,
+            orderId: order._id,
+            orderCode: order.code,
+            oldStatus,
+            newStatus: status,
+            category: "order_error",
+          }
+        );
+        return fail(res, 500, "Lỗi khi cập nhật trạng thái: " + error.message);
+      } finally {
+        session.endSession();
+      }
+    } else {
+      // Cập nhật trạng thái bình thường
+      order.status = status;
+      order.timeline.push({
+        status,
+        note: note || `Cập nhật trạng thái: ${status}`,
+      });
+      await order.save();
+    }
+
+    // Gửi email khi đơn hàng hoàn thành
+    if (status === "completed" && oldStatus !== "completed") {
+      try {
+        const user = await User.findById(order.userId);
+        if (user && user.email) {
+          await emailService.sendOrderCompletedEmail(order, user);
+          logger.info(`Order completed email sent for order: ${order.code}`, {
+            orderId: order._id,
+            orderCode: order.code,
+            userId: order.userId,
+            email: user.email,
+            category: "email_order_completed",
+            action: "order_completed_email_sent",
+          });
+        }
+      } catch (emailError) {
+        logger.error(
+          `Failed to send order completed email for order: ${order.code}`,
+          {
+            error: emailError.message,
+            orderId: order._id,
+            orderCode: order.code,
+            userId: order.userId,
+            category: "email_error",
+          }
+        );
+      }
+    }
 
     return ok(res, order);
   });

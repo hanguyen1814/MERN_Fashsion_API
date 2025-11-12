@@ -61,6 +61,12 @@ const ProductSchema = new mongoose.Schema(
     ratingAvg: { type: Number, default: 0, min: 0, max: 5 },
     ratingCount: { type: Number, default: 0 },
     salesCount: { type: Number, default: 0 },
+    description: { type: String, default: "" },
+    embedding: {
+      type: [Number],
+      index: "vector",
+      numDimensions: 768,
+    },
   },
   { timestamps: true }
 );

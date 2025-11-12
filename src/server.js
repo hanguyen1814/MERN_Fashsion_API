@@ -16,6 +16,9 @@ const {
   validateConfig: validateCloudinaryConfig,
 } = require("./config/cloudinary");
 const schedulerService = require("./services/scheduler.service");
+const emailService = require("./services/email.service");
+// Initialize Passport
+require("./config/passport");
 
 const app = express();
 
@@ -82,6 +85,12 @@ connectDB(process.env.MONGO_URI)
       ? "✓"
       : "✗ (Upload features may not work)";
 
+    // Validate Email service config
+    const emailServiceStatus =
+      emailService.transporter && emailService.transporter.sendMail
+        ? "✓"
+        : "✗ (Email features may not work)";
+
     // Khởi động scheduler service
     schedulerService.start();
 
@@ -94,6 +103,11 @@ connectDB(process.env.MONGO_URI)
       console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
       console.log(`💾 MongoDB:    ✓ Connected`);
       console.log(`☁️  Cloudinary: ${cloudinaryStatus}`);
+      console.log(
+        `📧 Email:      ${emailServiceStatus} (${
+          process.env.EMAIL_SERVICE || "smtp"
+        })`
+      );
       console.log("=".repeat(50) + "\n");
     });
   })

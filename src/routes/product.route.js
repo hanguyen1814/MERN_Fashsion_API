@@ -26,6 +26,10 @@ router.get(
   ProductController.info
 );
 
+// vector search
+router.post("/vector-search", ProductController.vectorSearch);
+
+
 // Admin/Staff routes
 router.post(
   "/",

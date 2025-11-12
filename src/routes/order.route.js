@@ -4,7 +4,7 @@ const auth = require("../middlewares/auth");
 const { requireStaffOrAdmin, requireAdmin } = require("../middlewares/rbac");
 const trackEvents = require("../middlewares/trackEvents");
 
-// User routes
+// User routes - Đặt routes cụ thể trước routes có param
 router.get("/", auth(), OrderController.listMine);
 router.post(
   "/checkout",
@@ -18,6 +18,9 @@ router.post(
   trackEvents("purchase"),
   OrderController.checkoutDirect
 );
+// Routes có param phải đặt sau routes cụ thể
+router.get("/:id", auth(), OrderController.getMine);
+router.post("/:id/cancel", auth(), OrderController.cancelOrder);
 
 // Staff/Admin routes
 router.patch(

@@ -5,6 +5,7 @@ const Event = require("../models/event.model");
 const asyncHandler = require("../utils/asyncHandler");
 const { ok, created, fail } = require("../utils/apiResponse");
 const logger = require("../config/logger");
+const { createEmbedding } = require("../utils/embedding");
 
 // Helpers để chuẩn hóa dữ liệu response theo yêu cầu
 const mapVariant = (v) => {
@@ -2040,6 +2041,37 @@ class ProductController {
         message: "Đề xuất dựa trên sản phẩm phổ biến",
         type: "fallback",
       });
+    }
+  });
+
+  // vector search
+  static vectorSearch = asyncHandler(async (req, res) => {
+    try {
+      const { query } = req.body;
+
+      const text = `Tìm sản phẩm thời trang phù hợp với từ khoá: ${query}`;
+
+      // 1️⃣ Sinh embedding từ Google AI
+      const queryEmbedding = await createEmbedding(text);
+
+      // 2️⃣ Thực hiện tìm kiếm vector
+      const results = await Product.aggregate([
+        {
+          $vectorSearch: {
+            index: "vector_index_1", // tên index trong Atlas
+            path: "embedding",
+            queryVector: queryEmbedding,
+            numCandidates: 200,
+            limit: 50,
+            similarity: "cosine",
+          },
+        },
+      ]);
+
+      res.json(results);
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: error.message });
     }
   });
 }

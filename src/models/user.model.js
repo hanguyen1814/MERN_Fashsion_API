@@ -30,7 +30,10 @@ const UserSchema = new mongoose.Schema(
       index: true,
     },
     phone: { type: String, unique: true, sparse: true, index: true },
-    passwordHash: { type: String, required: true },
+    passwordHash: {
+      type: String,
+      default: "",
+    },
     addresses: [AddressSchema],
     avatarUrl: String,
     provider: {
@@ -42,9 +45,12 @@ const UserSchema = new mongoose.Schema(
     loyaltyPoints: { type: Number, default: 0 },
     status: {
       type: String,
-      enum: ["active", "inactive", "banned"],
-      default: "active",
+      enum: ["active", "inactive", "banned", "pending"],
+      default: "pending",
     },
+    emailVerified: { type: Boolean, default: false },
+    emailVerificationToken: String,
+    emailVerificationExpires: Date,
     lastLogin: Date,
     refreshToken: String,
     failedLoginAttempts: { type: Number, default: 0 },
@@ -74,9 +80,23 @@ UserSchema.methods.toPublicJSON = function () {
   return userObject;
 };
 
+// Validate passwordHash cho local users
+UserSchema.pre("validate", function (next) {
+  if (this.provider === "local" && !this.passwordHash) {
+    this.invalidate("passwordHash", "Password is required for local users");
+  }
+  // OAuth users (google, facebook) tự động verified và active
+  if (this.provider !== "local" && this.isNew) {
+    this.emailVerified = true;
+    this.status = "active";
+  }
+  next();
+});
+
 // Thêm index cho tìm kiếm (loại bỏ duplicate indexes)
 UserSchema.index({ role: 1 });
 UserSchema.index({ status: 1 });
 UserSchema.index({ createdAt: -1 });
+UserSchema.index({ provider: 1, providerId: 1 }); // Index cho OAuth lookup
 
 module.exports = mongoose.model("User", UserSchema);

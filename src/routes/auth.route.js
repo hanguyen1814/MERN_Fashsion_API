@@ -11,4 +11,12 @@ router.post(
 );
 router.post("/logout", AuthController.logout);
 
+// Google OAuth routes
+router.get("/google", AuthController.googleAuth);
+router.get("/google/callback", AuthController.googleCallback);
+
+// Email verification routes
+router.get("/verify-email/:token", AuthController.verifyEmail);
+router.post("/resend-verification", AuthController.resendVerificationEmail);
+
 module.exports = router;
