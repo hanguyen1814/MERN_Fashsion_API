@@ -1,7 +1,7 @@
 {
     "info": {
         "name": "MERN Fashion Store API",
-        "description": "API REST cho hệ thống thương mại điện tử thời trang",
+        "description": "API REST cho hệ thống thương mại điện tử thời trang\n\n📚 Tài liệu API chi tiết:\n- [Tổng quan](docs/README.md)\n- [Authentication](docs/auth.md)\n- [Cart](docs/cart.md)\n- [Order](docs/order.md)\n- [Category](docs/category.md)\n- [Brand](docs/brand.md)\n- [Payment](docs/payment.md)\n- [Upload](docs/upload.md)\n- [User](docs/user.md)\n- [Product](docs/product.md)\n- [Review](docs/review.md)\n- [Wishlist](docs/wishlist.md)",
         "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
         "version": "1.0.0"
     },
@@ -158,6 +158,73 @@
                                 "logout"
                             ]
                         }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Google OAuth",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/google",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "google"
+                            ]
+                        },
+                        "description": "Khởi tạo quá trình đăng nhập bằng Google OAuth. Sẽ redirect đến Google OAuth consent screen."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Verify Email",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/verify-email/your-verification-token",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "verify-email",
+                                "your-verification-token"
+                            ]
+                        },
+                        "description": "Xác nhận email đăng ký bằng token được gửi qua email."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Resend Verification Email",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"user@example.com\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/resend-verification",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "resend-verification"
+                            ]
+                        },
+                        "description": "Gửi lại email xác nhận cho user chưa xác nhận email."
                     },
                     "response": []
                 }
@@ -776,6 +843,115 @@
                     "response": []
                 },
                 {
+                    "name": "Get Products by Category Slug",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/products/category/ao-thun?page=1&limit=20&status=active&sort=createdAt&order=desc",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "products",
+                                "category",
+                                "ao-thun"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "20"
+                                },
+                                {
+                                    "key": "status",
+                                    "value": "active"
+                                },
+                                {
+                                    "key": "sort",
+                                    "value": "createdAt"
+                                },
+                                {
+                                    "key": "order",
+                                    "value": "desc"
+                                }
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Get Products by Brand Slug",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/products/brand/nike?page=1&limit=20&status=active&sort=createdAt&order=desc",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "products",
+                                "brand",
+                                "nike"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "20"
+                                },
+                                {
+                                    "key": "status",
+                                    "value": "active"
+                                },
+                                {
+                                    "key": "sort",
+                                    "value": "createdAt"
+                                },
+                                {
+                                    "key": "order",
+                                    "value": "desc"
+                                }
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Vector Search",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"query\": \"áo thun nam màu đỏ\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/products/vector-search",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "products",
+                                "vector-search"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
                     "name": "Create Product (Admin)",
                     "request": {
                         "auth": {
@@ -806,6 +982,71 @@
                             ],
                             "path": [
                                 "products"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Update Product (Admin/Staff)",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"Áo thun nam đã cập nhật\",\n  \"description\": \"Áo thun nam chất liệu cotton cao cấp - Updated\",\n  \"price\": 280000,\n  \"status\": \"active\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/products/64f1a2b3c4d5e6f7a8b9c0d1",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "products",
+                                "64f1a2b3c4d5e6f7a8b9c0d1"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Delete Product (Admin/Staff)",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "DELETE",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/products/64f1a2b3c4d5e6f7a8b9c0d1",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "products",
+                                "64f1a2b3c4d5e6f7a8b9c0d1"
                             ]
                         }
                     },
@@ -1248,14 +1489,65 @@
                         "method": "GET",
                         "header": [],
                         "url": {
-                            "raw": "{{baseUrl}}/orders",
+                            "raw": "{{baseUrl}}/orders?page=1&limit=20&status=pending&sort=createdAt&order=desc",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
                                 "orders"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "20"
+                                },
+                                {
+                                    "key": "status",
+                                    "value": "pending"
+                                },
+                                {
+                                    "key": "sort",
+                                    "value": "createdAt"
+                                },
+                                {
+                                    "key": "order",
+                                    "value": "desc"
+                                }
                             ]
                         }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Get Order Details",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/orders/ORD-20230901-001",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "orders",
+                                "ORD-20230901-001"
+                            ]
+                        },
+                        "description": "Lấy chi tiết đơn hàng bằng ID hoặc order code."
                     },
                     "response": []
                 },
@@ -1330,6 +1622,45 @@
                                 "checkout-direct"
                             ]
                         }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Cancel Order",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"reason\": \"Không còn cần sản phẩm\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/orders/ORD-20230901-001/cancel",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "orders",
+                                "ORD-20230901-001",
+                                "cancel"
+                            ]
+                        },
+                        "description": "User hủy đơn hàng của chính họ. Chỉ có thể hủy đơn ở trạng thái pending hoặc paid."
                     },
                     "response": []
                 },
