@@ -28,8 +28,10 @@ class UserController {
       email: user.email || null,
       phone: user.phone || null,
       address: addressString,
+      avatar: user.avatarUrl || null,
       role: user.role || null,
       status: user.status || null,
+      emailVerified: user.emailVerified || false,
       created_at: user.createdAt || null,
     };
   }

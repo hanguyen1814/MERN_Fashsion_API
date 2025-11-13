@@ -18,6 +18,13 @@ router.post(
   trackEvents("purchase"),
   OrderController.checkoutDirect
 );
+
+// Admin routes - Phải đặt trước routes có param để tránh match nhầm
+router.get("/admin", auth(), requireAdmin, OrderController.listAdmin);
+router.get("/admin/stats", auth(), requireAdmin, OrderController.statsAdmin);
+router.get("/admin/export", auth(), requireAdmin, OrderController.exportAdmin);
+router.get("/admin/:id", auth(), requireAdmin, OrderController.getAdmin);
+
 // Routes có param phải đặt sau routes cụ thể
 router.get("/:id", auth(), OrderController.getMine);
 router.post("/:id/cancel", auth(), OrderController.cancelOrder);
@@ -29,11 +36,5 @@ router.patch(
   requireStaffOrAdmin,
   OrderController.updateStatus
 );
-
-// Admin routes
-router.get("/admin", auth(), requireAdmin, OrderController.listAdmin);
-router.get("/admin/stats", auth(), requireAdmin, OrderController.statsAdmin);
-router.get("/admin/export", auth(), requireAdmin, OrderController.exportAdmin);
-router.get("/admin/:id", auth(), requireAdmin, OrderController.getAdmin);
 
 module.exports = router;

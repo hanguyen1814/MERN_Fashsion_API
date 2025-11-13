@@ -172,4 +172,88 @@ ReviewSchema.post("deleteMany", async function () {
   }
 });
 
-module.exports = mongoose.model("Review", ReviewSchema);
+// Function để fix index khi khởi động (tự động drop và recreate index đúng)
+async function fixReviewIndex() {
+  try {
+    const Review = mongoose.model("Review");
+    if (!Review || !Review.collection) {
+      return; // Collection chưa sẵn sàng
+    }
+
+    const collection = Review.collection;
+
+    // Lấy danh sách tất cả indexes
+    const indexes = await collection.indexes();
+
+    // Tìm index cũ không có partialFilterExpression
+    const oldIndex = indexes.find(
+      (idx) =>
+        idx.key &&
+        idx.key.userId === 1 &&
+        idx.key.productId === 1 &&
+        (!idx.partialFilterExpression || !idx.partialFilterExpression.parentId)
+    );
+
+    if (oldIndex) {
+      // Drop index cũ
+      try {
+        await collection.dropIndex(oldIndex.name || "userId_1_productId_1");
+        console.log(
+          `✓ Dropped old review index: ${
+            oldIndex.name || "userId_1_productId_1"
+          }`
+        );
+      } catch (err) {
+        // Index có thể đã không tồn tại hoặc có tên khác
+        if (err.code !== 27) {
+          // 27 = IndexNotFound
+          console.warn(`Warning dropping old index:`, err.message);
+        }
+      }
+    }
+
+    // Tạo lại index với partialFilterExpression đúng
+    // Mongoose sẽ tự động tạo index từ schema, nhưng đảm bảo bằng cách tạo thủ công
+    try {
+      await collection.createIndex(
+        { userId: 1, productId: 1 },
+        {
+          unique: true,
+          partialFilterExpression: { parentId: null },
+          name: "userId_1_productId_1",
+        }
+      );
+      console.log(
+        "✓ Created/verified review index with partialFilterExpression"
+      );
+    } catch (err) {
+      // Index có thể đã tồn tại với đúng config
+      if (err.code !== 85 && err.code !== 86) {
+        // 85 = IndexOptionsConflict, 86 = IndexKeySpecsConflict
+        console.warn(`Warning creating review index:`, err.message);
+      }
+    }
+  } catch (error) {
+    console.error("Error fixing review index:", error.message);
+  }
+}
+
+// Tự động fix index khi DB đã connect
+const ReviewModel = mongoose.model("Review", ReviewSchema);
+
+// Đợi connection và fix index
+const setupIndexFix = () => {
+  if (mongoose.connection.readyState === 1) {
+    // Đã connected, fix ngay
+    setTimeout(() => fixReviewIndex(), 1000); // Delay một chút để đảm bảo model đã sẵn sàng
+  } else {
+    // Chưa connected, đợi connection
+    mongoose.connection.once("connected", () => {
+      setTimeout(() => fixReviewIndex(), 1000);
+    });
+  }
+};
+
+setupIndexFix();
+
+module.exports = ReviewModel;

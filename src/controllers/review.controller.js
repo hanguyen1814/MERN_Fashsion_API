@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const Review = require("../models/review.model");
 const Order = require("../models/order.model");
 const asyncHandler = require("../utils/asyncHandler");
@@ -335,7 +336,7 @@ class ReviewController {
 
   /**
    * Trả lời một review (admin hoặc user thường)
-   * Chỉ được reply vào review gốc, không được reply vào reply
+   * Cho phép reply vào bất kỳ review nào, kể cả reply
    */
   static reply = asyncHandler(async (req, res) => {
     const { id } = req.params; // ID của review cha
@@ -352,27 +353,33 @@ class ReviewController {
       return fail(res, 404, "Review không tồn tại");
     }
 
-    // Chỉ cho phép reply vào review gốc (không phải reply)
-    if (parentReview.parentId) {
-      return fail(
-        res,
-        400,
-        "Chỉ được phép reply vào review gốc, không được reply vào reply"
-      );
+    // Lấy productId từ review cha (mỗi review/reply đều có productId từ review gốc)
+    const productId = parentReview.productId;
+
+    if (!productId) {
+      return fail(res, 400, "Không thể xác định sản phẩm của review này");
     }
 
     // Xác định có phải admin reply không
     const isAdminReply = role === "admin" || role === "staff";
 
-    // Tạo reply
-    const reply = await Review.create({
+    // Đảm bảo parentId là ObjectId
+    const parentIdObj = mongoose.Types.ObjectId.isValid(id)
+      ? new mongoose.Types.ObjectId(id)
+      : id;
+
+    // Tạo reply - sử dụng new Review() và save() để đảm bảo parentId được set đúng
+    // Quan trọng: parentId phải được set để không bị conflict với unique index (chỉ áp dụng cho parentId: null)
+    const reply = new Review({
       userId,
-      productId: parentReview.productId,
-      parentId: id,
+      productId: productId,
+      parentId: parentIdObj, // Set parentId để tránh conflict với unique index
       content: sanitizePlainText(content, 1000),
       isAdminReply,
       // Reply không có rating và images
     });
+
+    await reply.save();
 
     // Populate user info
     await reply.populate("userId", "fullName avatarUrl role email");

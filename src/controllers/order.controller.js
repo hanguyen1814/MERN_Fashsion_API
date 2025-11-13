@@ -756,6 +756,38 @@ class OrderController {
 
     const total = await Order.countDocuments(query);
 
+    // Lấy tất cả productIds từ items để populate brand và category
+    const productIds = [
+      ...new Set(
+        orders.flatMap((order) =>
+          order.items.map((item) => item.productId?.toString()).filter(Boolean)
+        )
+      ),
+    ];
+
+    // Populate products với brand và category
+    const products = await Product.find({
+      _id: { $in: productIds },
+    })
+      .populate("brandId", "name")
+      .populate("categoryIds", "name");
+
+    // Tạo map để lookup nhanh
+    const productMap = new Map();
+    products.forEach((product) => {
+      productMap.set(product._id.toString(), {
+        brand: product.brandId
+          ? { _id: product.brandId._id, name: product.brandId.name }
+          : null,
+        categories: product.categoryIds
+          ? product.categoryIds.map((cat) => ({
+              _id: cat._id,
+              name: cat.name,
+            }))
+          : [],
+      });
+    });
+
     // Format response
     const formattedOrders = orders.map((order) => ({
       _id: order._id,
@@ -768,7 +800,14 @@ class OrderController {
             phone: order.userId.phone,
           }
         : null,
-      items: order.items,
+      items: order.items.map((item) => {
+        const productInfo = productMap.get(item.productId?.toString());
+        return {
+          ...item.toObject(),
+          brand: productInfo?.brand || null,
+          categories: productInfo?.categories || [],
+        };
+      }),
       shippingAddress: order.shippingAddress,
       subtotal: order.subtotal,
       discount: order.discount,
@@ -811,7 +850,48 @@ class OrderController {
       return fail(res, 404, "Không tìm thấy đơn hàng");
     }
 
-    return ok(res, order);
+    // Lấy productIds từ items để populate brand và category
+    const productIds = order.items
+      .map((item) => item.productId?.toString())
+      .filter(Boolean);
+
+    // Populate products với brand và category
+    const products = await Product.find({
+      _id: { $in: productIds },
+    })
+      .populate("brandId", "name")
+      .populate("categoryIds", "name");
+
+    // Tạo map để lookup nhanh
+    const productMap = new Map();
+    products.forEach((product) => {
+      productMap.set(product._id.toString(), {
+        brand: product.brandId
+          ? { _id: product.brandId._id, name: product.brandId.name }
+          : null,
+        categories: product.categoryIds
+          ? product.categoryIds.map((cat) => ({
+              _id: cat._id,
+              name: cat.name,
+            }))
+          : [],
+      });
+    });
+
+    // Format order với brand và category trong items
+    const formattedOrder = {
+      ...order.toObject(),
+      items: order.items.map((item) => {
+        const productInfo = productMap.get(item.productId?.toString());
+        return {
+          ...item.toObject(),
+          brand: productInfo?.brand || null,
+          categories: productInfo?.categories || [],
+        };
+      }),
+    };
+
+    return ok(res, formattedOrder);
   });
 
   /**
