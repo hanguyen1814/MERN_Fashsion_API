@@ -534,8 +534,8 @@ class OrderController {
   static validateStatusTransition(oldStatus, newStatus) {
     const validTransitions = {
       pending: ["paid", "cancelled"],
-      paid: ["processing", "cancelled", "refunded"],
-      processing: ["shipped", "cancelled", "refunded"],
+      paid: ["processing", "shipped", "completed", "cancelled", "refunded"],
+      processing: ["shipped", "completed", "cancelled", "refunded"],
       shipped: ["completed", "cancelled", "refunded"],
       completed: [], // Không thể chuyển từ completed
       cancelled: [], // Không thể chuyển từ cancelled
