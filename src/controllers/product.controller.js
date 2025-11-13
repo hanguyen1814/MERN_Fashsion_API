@@ -1949,7 +1949,13 @@ class ProductController {
         at: { $gte: thirtyDaysAgo },
         type: { $in: ["view", "add_to_cart", "purchase"] },
       })
-        .populate("productId")
+        .populate({
+          path: "productId",
+          populate: {
+            path: "categoryIds",
+            select: "name slug",
+          },
+        })
         .sort({ at: -1 })
         .limit(100)
         .lean();
@@ -2077,10 +2083,42 @@ class ProductController {
 }
 
 // Helper functions for recommendation logic
+
+// Helper: Phát hiện gender từ tên sản phẩm hoặc category
+function detectGender(text) {
+  if (!text) return null;
+  const lowerText = text.toLowerCase();
+
+  // Kiểm tra nam
+  if (
+    lowerText.includes("nam") ||
+    lowerText.includes("male") ||
+    lowerText.includes("men") ||
+    lowerText.includes("boy")
+  ) {
+    return "nam";
+  }
+
+  // Kiểm tra nữ
+  if (
+    lowerText.includes("nữ") ||
+    lowerText.includes("nu") ||
+    lowerText.includes("female") ||
+    lowerText.includes("women") ||
+    lowerText.includes("girl")
+  ) {
+    return "nữ";
+  }
+
+  return null;
+}
+
 function analyzeUserBehavior(events) {
   const categoryCount = {};
   const brandCount = {};
   const productCount = {};
+  const genderCount = { nam: 0, nữ: 0 };
+  const categoryGenderMap = {}; // Map category -> gender preferences
   const eventWeights = { purchase: 3, add_to_cart: 2, view: 1 };
 
   events.forEach((event) => {
@@ -2089,10 +2127,40 @@ function analyzeUserBehavior(events) {
     const product = event.productId;
     const weight = eventWeights[event.type] || 1;
 
-    // Đếm categories
+    // Phát hiện gender từ tên sản phẩm và category
+    let productGender = detectGender(product.name);
+
+    // Nếu không tìm thấy từ tên sản phẩm, kiểm tra category
+    if (!productGender && product.categoryIds) {
+      for (const category of product.categoryIds) {
+        const categoryName = typeof category === "object" ? category.name : "";
+        productGender = detectGender(categoryName);
+        if (productGender) break;
+      }
+    }
+
+    if (productGender) {
+      genderCount[productGender] = (genderCount[productGender] || 0) + weight;
+    }
+
+    // Đếm categories và track gender cho mỗi category
     if (product.categoryIds) {
-      product.categoryIds.forEach((catId) => {
+      product.categoryIds.forEach((cat) => {
+        // Xử lý cả ObjectId và object đã populate
+        const catId =
+          typeof cat === "object" && cat._id
+            ? cat._id.toString()
+            : cat.toString();
         categoryCount[catId] = (categoryCount[catId] || 0) + weight;
+
+        // Track gender cho category
+        if (!categoryGenderMap[catId]) {
+          categoryGenderMap[catId] = { nam: 0, nữ: 0 };
+        }
+        if (productGender) {
+          categoryGenderMap[catId][productGender] =
+            (categoryGenderMap[catId][productGender] || 0) + weight;
+        }
       });
     }
 
@@ -2105,6 +2173,12 @@ function analyzeUserBehavior(events) {
     productCount[product._id] = (productCount[product._id] || 0) + weight;
   });
 
+  // Xác định genders có trong lịch sử
+  const hasBothGenders = genderCount.nam > 0 && genderCount.nữ > 0;
+  const preferredGenders = [];
+  if (genderCount.nam > 0) preferredGenders.push("nam");
+  if (genderCount.nữ > 0) preferredGenders.push("nữ");
+
   return {
     topCategories: Object.entries(categoryCount)
       .sort(([, a], [, b]) => b - a)
@@ -2115,6 +2189,12 @@ function analyzeUserBehavior(events) {
     topProducts: Object.entries(productCount)
       .sort(([, a], [, b]) => b - a)
       .map(([id]) => id),
+    genderPreferences: {
+      hasBothGenders,
+      preferredGenders,
+      genderCount,
+      categoryGenderMap,
+    },
   };
 }
 
@@ -2126,16 +2206,79 @@ async function getCategoryBasedRecommendations(preferences, userId, limit) {
     productId: { $exists: true },
   });
 
-  return Product.find({
-    status: "active",
-    categoryIds: { $in: preferences.topCategories },
-    _id: { $nin: excludeProducts },
-  })
-    .sort({ ratingAvg: -1, salesCount: -1 })
-    .limit(Number(limit))
-    .populate("brandId", "name logo")
-    .populate("categoryIds", "name slug")
-    .lean();
+  // Lấy top 3 categories (hoặc ít hơn nếu không đủ)
+  const top3Categories = preferences.topCategories.slice(0, 3);
+  const genderPrefs = preferences.genderPreferences || {};
+  const hasBothGenders = genderPrefs.hasBothGenders || false;
+
+  // Tính limit: nếu có cả nam và nữ, cần nhiều sản phẩm hơn
+  const genderMultiplier = hasBothGenders ? 2 : 1;
+  const effectiveLimit = Number(limit) * genderMultiplier;
+  const limitPerCategory = Math.ceil(
+    effectiveLimit / Math.max(top3Categories.length, 1)
+  );
+
+  // Nếu có cả nam và nữ, lấy sản phẩm cho cả hai
+  const genderFilters = hasBothGenders
+    ? [
+        { name: { $regex: /nam|male|men|boy/i } },
+        { name: { $regex: /nữ|nu|female|women|girl/i } },
+      ]
+    : genderPrefs.preferredGenders?.length > 0
+    ? genderPrefs.preferredGenders.map((gender) => {
+        if (gender === "nam") {
+          return { name: { $regex: /nam|male|men|boy/i } };
+        } else {
+          return { name: { $regex: /nữ|nu|female|women|girl/i } };
+        }
+      })
+    : null;
+
+  const allProducts = [];
+
+  // Lấy sản phẩm từ mỗi category top 3
+  for (const categoryId of top3Categories) {
+    const baseQuery = {
+      status: "active",
+      categoryIds: categoryId,
+      _id: { $nin: excludeProducts },
+    };
+
+    if (genderFilters && genderFilters.length > 0) {
+      // Nếu có gender filter, lấy sản phẩm theo gender
+      const genderLimit = Math.ceil(limitPerCategory / genderFilters.length);
+      for (const genderFilter of genderFilters) {
+        const products = await Product.find({
+          ...baseQuery,
+          ...genderFilter,
+        })
+          .sort({ ratingAvg: -1, salesCount: -1 })
+          .limit(genderLimit)
+          .populate("brandId", "name logo")
+          .populate("categoryIds", "name slug")
+          .lean();
+        allProducts.push(...products);
+      }
+    } else {
+      // Không có gender filter, lấy bình thường
+      const products = await Product.find(baseQuery)
+        .sort({ ratingAvg: -1, salesCount: -1 })
+        .limit(limitPerCategory)
+        .populate("brandId", "name logo")
+        .populate("categoryIds", "name slug")
+        .lean();
+      allProducts.push(...products);
+    }
+  }
+
+  // Loại bỏ trùng lặp và giới hạn số lượng
+  const uniqueProducts = allProducts.filter(
+    (product, index, self) =>
+      index ===
+      self.findIndex((p) => p._id.toString() === product._id.toString())
+  );
+
+  return uniqueProducts.slice(0, Number(limit));
 }
 
 async function getBrandBasedRecommendations(preferences, userId, limit) {
@@ -2203,26 +2346,85 @@ async function getSimilarProductRecommendations(preferences, userId, limit) {
 }
 
 async function getMixedRecommendations(preferences, userId, limit) {
-  const limitPerType = Math.ceil(Number(limit) / 3);
   const excludeProducts = await Event.distinct("productId", {
     userId,
     productId: { $exists: true },
   });
 
-  const [categoryBased, brandBased, similarBased] = await Promise.all([
-    preferences.topCategories.length > 0
-      ? Product.find({
-          status: "active",
-          categoryIds: { $in: preferences.topCategories },
-          _id: { $nin: excludeProducts },
-        })
+  // Ưu tiên category-based recommendations với top 3 categories
+  // Phân bổ: 60% category, 25% brand, 15% similar
+  const genderPrefs = preferences.genderPreferences || {};
+  const hasBothGenders = genderPrefs.hasBothGenders || false;
+
+  // Nếu có cả nam và nữ, cần nhiều sản phẩm hơn cho category
+  const genderMultiplier = hasBothGenders ? 1.5 : 1;
+  const categoryLimit = Math.ceil(Number(limit) * 0.6 * genderMultiplier);
+  const brandLimit = Math.ceil(Number(limit) * 0.25);
+  const similarLimit = Math.ceil(Number(limit) * 0.15);
+
+  // Lấy top 3 categories
+  const top3Categories = preferences.topCategories.slice(0, 3);
+  const limitPerCategory = Math.ceil(
+    categoryLimit / Math.max(top3Categories.length, 1)
+  );
+
+  // Nếu có cả nam và nữ, lấy sản phẩm cho cả hai
+  const genderFilters = hasBothGenders
+    ? [
+        { name: { $regex: /nam|male|men|boy/i } },
+        { name: { $regex: /nữ|nu|female|women|girl/i } },
+      ]
+    : genderPrefs.preferredGenders?.length > 0
+    ? genderPrefs.preferredGenders.map((gender) => {
+        if (gender === "nam") {
+          return { name: { $regex: /nam|male|men|boy/i } };
+        } else {
+          return { name: { $regex: /nữ|nu|female|women|girl/i } };
+        }
+      })
+    : null;
+
+  const categoryBased = [];
+
+  // Lấy sản phẩm từ mỗi category top 3
+  if (top3Categories.length > 0) {
+    for (const categoryId of top3Categories) {
+      const baseQuery = {
+        status: "active",
+        categoryIds: categoryId,
+        _id: { $nin: excludeProducts },
+      };
+
+      if (genderFilters && genderFilters.length > 0) {
+        // Nếu có gender filter, lấy sản phẩm theo gender
+        const genderLimit = Math.ceil(limitPerCategory / genderFilters.length);
+        for (const genderFilter of genderFilters) {
+          const products = await Product.find({
+            ...baseQuery,
+            ...genderFilter,
+          })
+            .sort({ ratingAvg: -1, salesCount: -1 })
+            .limit(genderLimit)
+            .populate("brandId", "name logo")
+            .populate("categoryIds", "name slug")
+            .lean();
+          categoryBased.push(...products);
+        }
+      } else {
+        // Không có gender filter, lấy bình thường
+        const products = await Product.find(baseQuery)
           .sort({ ratingAvg: -1, salesCount: -1 })
-          .limit(limitPerType)
+          .limit(limitPerCategory)
           .populate("brandId", "name logo")
           .populate("categoryIds", "name slug")
-          .lean()
-      : [],
+          .lean();
+        categoryBased.push(...products);
+      }
+    }
+  }
 
+  // Brand-based và similar-based recommendations
+  const [brandBased, similarBased] = await Promise.all([
     preferences.topBrands.length > 0
       ? Product.find({
           status: "active",
@@ -2230,13 +2432,13 @@ async function getMixedRecommendations(preferences, userId, limit) {
           _id: { $nin: excludeProducts },
         })
           .sort({ ratingAvg: -1, salesCount: -1 })
-          .limit(limitPerType)
+          .limit(brandLimit)
           .populate("brandId", "name logo")
           .populate("categoryIds", "name slug")
           .lean()
       : [],
 
-    getSimilarProductRecommendations(preferences, userId, limitPerType),
+    getSimilarProductRecommendations(preferences, userId, similarLimit),
   ]);
 
   // Kết hợp và loại bỏ trùng lặp

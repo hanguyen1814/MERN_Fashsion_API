@@ -162,16 +162,40 @@ const productValidation = {
       .trim()
       .isLength({ min: 2, max: 100 })
       .withMessage("Tên sản phẩm phải từ 2-100 ký tự"),
+    body("slug")
+      .trim()
+      .isLength({ min: 2, max: 100 })
+      .withMessage("Slug phải từ 2-100 ký tự"),
     body("description")
+      .optional({ checkFalsy: true })
       .trim()
       .isLength({ max: 2000 })
       .withMessage("Mô tả không được quá 2000 ký tự"),
-    body("price").isFloat({ min: 0 }).withMessage("Giá phải là số dương"),
-    body("stock")
+    body("variants")
+      .isArray({ min: 1 })
+      .withMessage("Sản phẩm phải có ít nhất 1 variant"),
+    body("variants.*.sku")
+      .trim()
+      .notEmpty()
+      .withMessage("SKU không được để trống"),
+    body("variants.*.price")
+      .isFloat({ min: 0 })
+      .withMessage("Giá phải là số dương"),
+    body("variants.*.stock")
       .isInt({ min: 0 })
       .withMessage("Số lượng tồn kho phải là số nguyên dương"),
-    body("categoryId").isMongoId().withMessage("ID danh mục không hợp lệ"),
-    body("brandId").isMongoId().withMessage("ID thương hiệu không hợp lệ"),
+    body("categoryIds")
+      .isArray({ min: 1 })
+      .withMessage("Sản phẩm phải có ít nhất 1 danh mục"),
+    body("categoryIds.*").isMongoId().withMessage("ID danh mục không hợp lệ"),
+    body("brandId")
+      .optional()
+      .isMongoId()
+      .withMessage("ID thương hiệu không hợp lệ"),
+    body("status")
+      .optional()
+      .isIn(["draft", "active", "archived"])
+      .withMessage("Trạng thái không hợp lệ"),
     handleValidationErrors,
   ],
 
@@ -181,19 +205,49 @@ const productValidation = {
       .trim()
       .isLength({ min: 2, max: 100 })
       .withMessage("Tên sản phẩm phải từ 2-100 ký tự"),
-    body("description")
+    body("slug")
       .optional()
+      .trim()
+      .isLength({ min: 2, max: 100 })
+      .withMessage("Slug phải từ 2-100 ký tự"),
+    body("description")
+      .optional({ checkFalsy: true })
       .trim()
       .isLength({ max: 2000 })
       .withMessage("Mô tả không được quá 2000 ký tự"),
-    body("price")
+    body("variants")
+      .optional()
+      .isArray({ min: 1 })
+      .withMessage("Sản phẩm phải có ít nhất 1 variant"),
+    body("variants.*.sku")
+      .optional()
+      .trim()
+      .notEmpty()
+      .withMessage("SKU không được để trống"),
+    body("variants.*.price")
       .optional()
       .isFloat({ min: 0 })
       .withMessage("Giá phải là số dương"),
-    body("stock")
+    body("variants.*.stock")
       .optional()
       .isInt({ min: 0 })
       .withMessage("Số lượng tồn kho phải là số nguyên dương"),
+    body("categoryIds")
+      .optional()
+      .isArray({ min: 1 })
+      .withMessage("Sản phẩm phải có ít nhất 1 danh mục"),
+    body("categoryIds.*")
+      .optional()
+      .isMongoId()
+      .withMessage("ID danh mục không hợp lệ"),
+    body("brandId")
+      .optional()
+      .isMongoId()
+      .withMessage("ID thương hiệu không hợp lệ"),
+    body("status")
+      .optional()
+      .isIn(["draft", "active", "archived"])
+      .withMessage("Trạng thái không hợp lệ"),
     handleValidationErrors,
   ],
 
